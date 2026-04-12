@@ -10,13 +10,18 @@ WORKDIR /workspace
 
 COPY requirements.txt /workspace/requirements.txt
 
-# 1. requirements.txt 설치 (기존 파이토치 2.1.0 유지)
+# 1. numpy를 1.x로 고정 (PyTorch 2.1.0이 numpy 1.x로 빌드됨)
+RUN pip install --no-cache-dir "numpy<2"
+
+# 2. requirements.txt 설치 (기존 파이토치 2.1.0 유지)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 2. xformers는 파이토치 2.1.0과 호환되는 버전으로 고정
-RUN pip install --no-cache-dir diffusers transformers xformers==0.0.22.post7
+# 3. diffusers/xformers 버전 고정 (PyTorch 2.1.0 호환)
+#    - diffusers 0.25.x: torch.xpu 미요구, PyTorch 2.1 호환 마지막 안정 버전대
+#    - xformers 0.0.22.post7: PyTorch 2.1.0 전용
+RUN pip install --no-cache-dir "diffusers==0.25.1" "transformers<4.40" xformers==0.0.22.post7
 
-# 3. omegaconf 명시 설치 (text2im.py에서 사용)
+# 4. omegaconf 명시 설치 (text2im.py에서 사용)
 RUN pip install --no-cache-dir omegaconf
 
 # 4. 파이토치 버전 확인
