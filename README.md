@@ -82,6 +82,71 @@ Right: baseline (Swin-L)
 |  Swin-L  | baseline |    47.5    |     42.3    |     41.4    |      36.8     | [model](https://drive.google.com/drive/folders/1vVwrZ4ad0xiWVO-JLaxRdLMDq4vdRZwT?usp=sharing) |
 |  Swin-L  | X-Paste  |    50.9    |     45.4    |     48.7     |      43.8    | [model](https://drive.google.com/drive/folders/1vVwrZ4ad0xiWVO-JLaxRdLMDq4vdRZwT?usp=sharing) |
 
+## Small Object Generation (Extended)
+
+기존 X-Paste 파이프라인을 확장하여 small object (COCO 기준 area < 32² = 1024px) 생성을 지원합니다.
+
+### 추가된 옵션 (`generation/text2im.py`)
+
+| 인자 | 기본값 | 설명 |
+|------|--------|------|
+| `--prompt_template` | `"a photo of a single {}"` | 프롬프트 템플릿. `{}`에 카테고리명이 들어감 |
+| `--image_size` | `512` | 생성 이미지 해상도 (8의 배수). 작을수록 작은 객체 생성에 유리 |
+
+### Small Object 생성 예시
+
+```bash
+# 기존 방식 (변경 없음)
+python generation/text2im.py --model diffusers --samples 100 \
+  --category_file lvis_v1_train.json --output_dir LVIS_gen_FG
+
+# Small object 전용 생성
+python generation/text2im.py --model diffusers --samples 100 \
+  --prompt_template "a photo of a small {}" \
+  --image_size 256 \
+  --category_file lvis_v1_train.json \
+  --output_dir LVIS_gen_FG_small
+```
+
+### Docker로 실행하기
+
+#### 1. Docker 이미지 빌드
+
+```bash
+# XPaste/ 디렉토리에서 실행 (Dockerfile이 여기 있음)
+cd XPaste
+docker build -t xpaste .
+```
+
+#### 2. 컨테이너 실행
+
+```bash
+# GPU 사용, XPaste 디렉토리 마운트
+docker run --gpus all -it --rm \
+  -v $(pwd):/workspace/XPaste \
+  xpaste bash
+```
+
+#### 3. 컨테이너 안에서 실행
+
+```bash
+# Small object 생성
+python generation/text2im.py --model diffusers --samples 100 \
+  --prompt_template "a photo of a small {}" \
+  --image_size 256 \
+  --category_file lvis_v1_train.json \
+  --output_dir LVIS_gen_FG_small
+```
+
+#### 추천 프롬프트 템플릿
+
+| 템플릿 | 용도 |
+|--------|------|
+| `"a photo of a single {}"` | 기본 (원본 X-Paste) |
+| `"a photo of a small {}"` | small object |
+| `"a photo of a tiny {}"` | 더 작은 object |
+| `"a close-up photo of a tiny {}"` | 클로즈업 + tiny |
+
 ## Acknowledgements
 
 We use code from [Detic](https://github.com/facebookresearch/Detic), [CenterNet2](https://github.com/xingyizhou/CenterNet2) and [Detectron2](https://github.com/facebookresearch/detectron2)
