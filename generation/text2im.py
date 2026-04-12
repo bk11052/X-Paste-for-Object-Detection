@@ -39,7 +39,10 @@ def init(args,rank=None):
         model_id= "runwayml/stable-diffusion-v1-5"
         pipe = StableDiffusionPipeline.from_pretrained(model_id,torch_dtype=torch.float16,output_type='latent')
         pipe.scheduler=DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
-        pipe.unet.enable_xformers_memory_efficient_attention()
+        try:
+            pipe.unet.enable_xformers_memory_efficient_attention()
+        except Exception:
+            print("xformers not available, using default attention")
         pipe.to(device)
 
 
@@ -152,9 +155,11 @@ if __name__=="__main__":
 
     with open(args.category_file) as f:
         data=json.load(f)
-    target_class=[]
-    for i in data['categories']:
-        target_class.append(i)
+    # 두 가지 형식 지원: lvis_v1_train.json (dict with 'categories') 또는 cat_info.json (list)
+    if isinstance(data, list):
+        target_class = data
+    else:
+        target_class = data['categories']
     PATH=args.output_dir
     os.makedirs(PATH,exist_ok=True)
     if args.resume:

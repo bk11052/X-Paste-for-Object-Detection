@@ -20,7 +20,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 #    - diffusers 0.21.4: cached_download 이슈 없음, PyTorch 2.1 호환
 #    - huggingface_hub 0.23.x: cached_download 지원하는 마지막 버전대
 #    - xformers 0.0.22.post7: PyTorch 2.1.0 전용
-RUN pip install --no-cache-dir "diffusers==0.21.4" "transformers<4.36" "huggingface_hub<0.24" xformers==0.0.22.post7
+RUN pip install --no-cache-dir "diffusers==0.21.4" "transformers<4.36" "huggingface_hub<0.24"
+RUN pip install --no-cache-dir xformers==0.0.22.post7 --index-url https://download.pytorch.org/whl/cu118
 
 # 4. omegaconf 명시 설치 (text2im.py에서 사용)
 RUN pip install --no-cache-dir omegaconf
