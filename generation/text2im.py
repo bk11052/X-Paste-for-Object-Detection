@@ -16,6 +16,9 @@ th.set_grad_enabled(False)
 def init(args,rank=None):
     global device,clip_model,preprocess,pipe
     global config_ldm,model_ldm,ldm_sampler, ldm_opt
+    global prompt_template, image_size
+    prompt_template = getattr(args, 'prompt_template', 'a photo of a single {}')
+    image_size = getattr(args, 'image_size', 512)
     if rank is None:
         rank=th.multiprocessing.current_process()._identity[0]-1
     print("init process GPU:",rank)
@@ -28,13 +31,13 @@ def init(args,rank=None):
         from ldm.util import instantiate_from_config
         from ldm.models.diffusion.ddim import DDIMSampler
         from ldm.models.diffusion.plms import PLMSSampler
-        ldm_opt=edict(dict(scale=5.0,ddim_steps=200,ddim_eta=0,H=512,W=512))
+        ldm_opt=edict(dict(scale=5.0,ddim_steps=200,ddim_eta=0,H=image_size,W=image_size))
         config_ldm = OmegaConf.load(os.path.join(args.stable_diffusion_dir,"configs/stable-diffusion/v1-inference.yaml"))
         model_ldm = load_model_from_config(config_ldm, os.path.join(args.stable_diffusion_dir,"models/ldm/stable-diffusion-v1/sd-v1-4.ckpt")).to(device)
         ldm_sampler = PLMSSampler(model_ldm)
     if args.model=='diffusers':
         model_id= "runwayml/stable-diffusion-v1-5"
-        pipe = StableDiffusionPipeline.from_pretrained(model_id,torch_dtype=torch.float16,output_type='latent')   
+        pipe = StableDiffusionPipeline.from_pretrained(model_id,torch_dtype=torch.float16,output_type='latent')
         pipe.scheduler=DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
         pipe.unet.enable_xformers_memory_efficient_attention()
         pipe.to(device)
@@ -100,12 +103,12 @@ def save_images(batch,path,cls,offset):
         pil_image.save(os.path.join(path,cls,f"{offset+i:04d}.png"))
 
 def gen_image(cls_info,method='latent',batch_size=10,total=100,output_path='/mnt/home/syn4det/LVIS_gen_FG_2'):
-    text='a photo of a single {}'.format(' '.join(cls_info['name'].split('_')))
+    text=prompt_template.format(' '.join(cls_info['name'].split('_')))
     clips=[]
     offset=0
     while 1:
         if method=='diffusers':
-            latents=pipe(text, num_inference_steps=50, guidance_scale=7.5,num_images_per_prompt=batch_size,output_type='latent').images
+            latents=pipe(text, num_inference_steps=50, guidance_scale=7.5,num_images_per_prompt=batch_size,height=image_size,width=image_size,output_type='latent').images
             latents = 1 / pipe.vae.config.scaling_factor * latents
             im = pipe.vae.decode(latents).sample
         else:
@@ -139,6 +142,11 @@ if __name__=="__main__":
     parser.add_argument('--output_dir', type=str, default='LVIS_gen_FG')
     parser.add_argument('--category_file', type=str, default='/mnt/data/LVIS/lvis_v1_train.json')
     parser.add_argument('--stable_diffusion_dir', type=str, default=os.path.join(os.getcwd(),'stable-diffusion'))
+    parser.add_argument('--prompt_template', type=str, default='a photo of a single {}',
+                        help='Prompt template with {} placeholder for category name. '
+                             'e.g. "a photo of a small {}" or "a close-up photo of a tiny {}"')
+    parser.add_argument('--image_size', type=int, default=512,
+                        help='Generated image resolution (must be multiple of 8). Default: 512')
     parser.add_argument('--resume', action='store_true')
     args = parser.parse_args()
 
