@@ -20,13 +20,14 @@ import random
 
 
 # 카테고리별 크기 설정 (위성/드론 시점 기준, pixels)
-# soldier < tank < fighter craft
+# 기준: soldier 40px = 1.8m → 1m ≈ 22px
+# soldier < tank < fighter aircraft
 CATEGORY_SIZE = {
-    "soldier": {"min": 8, "max": 15},       # 사람은 가장 작음
-    "tank": {"min": 20, "max": 35},          # 전차는 중간
-    "fighter aircraft": {"min": 35, "max": 55},  # 전투기는 가장 큼
-    "fighter_craft": {"min": 35, "max": 55},
-    "fighter_jet": {"min": 35, "max": 55},
+    "soldier": {"min": 35, "max": 45},           # 1.8m → ~40px
+    "tank": {"min": 140, "max": 170},             # 7m 길이 → ~155px
+    "fighter aircraft": {"min": 300, "max": 360},  # 15m 길이 → ~333px
+    "fighter_craft": {"min": 300, "max": 360},
+    "fighter_jet": {"min": 300, "max": 360},
 }
 
 # 카테고리별 배치 패턴 (군사 현실성 반영)
@@ -34,27 +35,27 @@ CATEGORY_PLACEMENT = {
     "soldier": {
         "count": (8, 15),        # 분대~소대 규모
         "formation": "cluster",  # 밀집 대형
-        "spacing": (5, 15),      # 병사 간 간격 (px)
+        "spacing": (15, 40),     # 병사 간 간격 (~1-2m)
     },
     "tank": {
-        "count": (3, 6),         # 소대 규모
+        "count": (3, 5),         # 소대 규모
         "formation": "line",     # 종대/횡대
-        "spacing": (30, 60),     # 전차 간 간격
+        "spacing": (180, 280),   # 전차 간 간격 (~8-12m)
     },
     "fighter aircraft": {
-        "count": (2, 4),         # 편대 규모
-        "formation": "line",     # 활주로 정렬
-        "spacing": (50, 80),
+        "count": (2, 3),         # 편대 규모
+        "formation": "line",     # 활주로/주기장 정렬
+        "spacing": (380, 500),   # 항공기 간 간격 (~17-22m)
     },
     "fighter_craft": {
-        "count": (2, 4),
+        "count": (2, 3),
         "formation": "line",
-        "spacing": (50, 80),
+        "spacing": (380, 500),
     },
     "fighter_jet": {
-        "count": (2, 4),
+        "count": (2, 3),
         "formation": "line",
-        "spacing": (50, 80),
+        "spacing": (380, 500),
     },
 }
 
