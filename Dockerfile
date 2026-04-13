@@ -10,23 +10,21 @@ WORKDIR /workspace
 
 COPY requirements.txt /workspace/requirements.txt
 
-# 1. numpy를 1.x로 고정 (PyTorch 2.1.0이 numpy 1.x로 빌드됨)
-RUN pip install --no-cache-dir "numpy<2"
-
-# 2. requirements.txt 설치 (기존 파이토치 2.1.0 유지)
+# 1. requirements.txt 설치
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 3. diffusers/xformers 버전 고정 (PyTorch 2.1.0 호환)
-#    - diffusers 0.21.4: cached_download 이슈 없음, PyTorch 2.1 호환
-#    - huggingface_hub 0.23.x: cached_download 지원하는 마지막 버전대
-#    - xformers 0.0.22.post7: PyTorch 2.1.0 전용
+# 2. diffusers/xformers 버전 고정 (PyTorch 2.1.0 + CUDA 11.8 호환)
 RUN pip install --no-cache-dir "diffusers==0.21.4" "transformers<4.36" "huggingface_hub<0.24"
 RUN pip install --no-cache-dir xformers==0.0.22.post7 --index-url https://download.pytorch.org/whl/cu118
 
-# 4. omegaconf 명시 설치 (text2im.py에서 사용)
-RUN pip install --no-cache-dir omegaconf
+# 3. omegaconf (text2im.py), accelerate (모델 로딩 가속)
+RUN pip install --no-cache-dir omegaconf accelerate
 
-# 4. 파이토치 버전 확인
-RUN python -c "import torch; print('*** Torch Version:', torch.__version__); print('*** CUDA Version:', torch.version.cuda)"
+# 4. numpy<2를 마지막에 설치 (PyTorch 2.1.0은 numpy 1.x 필요, 다른 패키지가 2.x로 올릴 수 있으므로)
+RUN pip install --no-cache-dir "numpy<2"
+
+# 5. 검증
+RUN python -c "import torch; print('Torch:', torch.__version__, 'CUDA:', torch.version.cuda)"
+RUN python -c "import numpy; print('NumPy:', numpy.__version__)"
 
 WORKDIR /workspace/XPaste

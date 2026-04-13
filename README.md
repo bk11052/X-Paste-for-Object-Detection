@@ -147,6 +147,53 @@ python generation/text2im.py --model diffusers --samples 100 \
 | `"a photo of a tiny {}"` | 더 작은 object |
 | `"a close-up photo of a tiny {}"` | 클로즈업 + tiny |
 
+### SD 1.5 해상도 제한
+
+SD 1.5는 512x512로 학습되었으므로 1920x1080 등 고해상도 직접 생성 시 반복 패턴, 구조 붕괴, VRAM 부족 문제가 발생한다. 장면 내 작은 객체를 SD에 직접 요청해도 객체가 크게 생성되므로, **생성(256~512px) → 축소 paste(20x20)** 2단계 방식을 사용한다.
+
+### Bbox Label 생성 (Object Detection용)
+
+생성된 전경 이미지에서 배경을 제거하고 bbox를 COCO JSON으로 추출한다.
+
+```bash
+# Bbox label 추출 (threshold 방식 - 빠름)
+python segment_methods/gen_bbox_labels.py \
+  --input_dir output/LVIS_gen_FG \
+  --output_file output/bbox_labels.json \
+  --method threshold
+
+# Bbox label 추출 (grabcut 방식 - 정확)
+python segment_methods/gen_bbox_labels.py \
+  --input_dir output/LVIS_gen_FG \
+  --output_file output/bbox_labels.json \
+  --method grabcut
+
+# 결과 확인
+python -c "import json; d=json.load(open('output/bbox_labels.json')); \
+  print(f'images: {len(d[\"images\"])}, annotations: {len(d[\"annotations\"])}, categories: {len(d[\"categories\"])}')"
+
+# Bbox 시각화
+python segment_methods/visualize_bbox.py \
+  --input_dir output/LVIS_gen_FG \
+  --label_file output/bbox_labels.json \
+  --output_dir output/bbox_vis \
+  --max_images 5
+```
+
+### 커스텀 카테고리 (군사용 등)
+
+LVIS에 없는 카테고리도 커스텀 JSON으로 생성 가능:
+
+```bash
+# generation/military_categories.json 사용
+python generation/text2im.py --model diffusers --samples 5 --batchsize 5 \
+  --prompt_template "a photo of a small {}" \
+  --category_file generation/military_categories.json \
+  --output_dir output/LVIS_gen_FG_military
+```
+
+LVIS 내 군사 관련 카테고리: `army_tank`(id=1058), `fighter_jet`(id=436), `gun`(id=523), `helicopter`(id=555), `rifle`(id=884)
+
 ## Acknowledgements
 
 We use code from [Detic](https://github.com/facebookresearch/Detic), [CenterNet2](https://github.com/xingyizhou/CenterNet2) and [Detectron2](https://github.com/facebookresearch/detectron2)

@@ -102,8 +102,21 @@ Pre-computed metadata in `datasets/metadata/`: CLIP embeddings (`lvis_v1_clip_a+
 
 ## Current Work: Small Object 생성 & Copy-Paste
 
-COCO 기준 small object (area < 32² = 1024px) 전용 augmentation 파이프라인 구축. 순차 진행:
+COCO 기준 small object (area < 32² = 1024px) 전용 augmentation 파이프라인 구축. 군사 카테고리(tank, soldier, fighter_craft) 타겟.
 
-1. **Small object 생성** — `generation/text2im.py`에 `--prompt_template`, `--image_size` 옵션 추가하여 small object 합성 이미지 생성
-2. **Bbox 단위 label 생성** — `config.py`에 `INPUT.BBOX_ONLY` 추가, mask 없이 bbox만으로 detection 학습용 label 출력
-3. **Small object copy-paste** — `config.py`에 `INPUT.SMALL_OBJECT_MODE` 추가, paste 크기를 area < 1024px로 제한, occlusion 임계값 조정
+### 진행 현황
+1. **[완료] Small object 생성** — `generation/text2im.py`에 `--prompt_template`, `--image_size` 추가
+2. **[완료] SD 직접 생성 실험** — SD 1.5는 장면 내 tiny object 생성 불가 (512x512 학습 한계). 생성→축소 paste 방식 채택
+3. **[진행] Bbox 단위 label 생성** — `segment_methods/gen_bbox_labels.py` (독립 스크립트, COCO JSON 출력)
+4. **[예정] Small object copy-paste** — 생성된 객체를 1920x1080 배경에 20x20으로 paste
+
+### 추가된 스크립트
+- `generation/text2im.py` — `--prompt_template`, `--image_size`, 커스텀 카테고리 JSON 지원
+- `generation/gen_small_object_in_scene.py` — SD 장면 내 small object 직접 생성 (실험용)
+- `generation/military_categories.json` — 군사 커스텀 카테고리 (tank, soldier, fighter_craft)
+- `segment_methods/gen_bbox_labels.py` — 생성 이미지에서 bbox label 추출 (COCO JSON)
+- `segment_methods/visualize_bbox.py` — bbox 시각화
+
+### 군사 카테고리 LVIS 매핑
+- army_tank (id=1058, rare), fighter_jet (id=436), gun (id=523), helicopter (id=555), rifle (id=884)
+- soldier는 LVIS에 없음 → 커스텀 카테고리로 생성 가능
