@@ -212,17 +212,17 @@ def main():
     image_id = 0
     ann_id = 0
 
-    # 각 배경에 각 카테고리를 paste
+    # 각 배경에 모든 카테고리를 한 이미지에 합성
     for bg_path in bg_files:
         bg_name = os.path.splitext(os.path.basename(bg_path))[0]
-        bg_orig = cv2.imread(bg_path)
-        if bg_orig is None:
+        bg = cv2.imread(bg_path)
+        if bg is None:
             continue
-        bg_h, bg_w = bg_orig.shape[:2]
+        bg_h, bg_w = bg.shape[:2]
         print(f"\nBackground: {bg_name} ({bg_w}x{bg_h})")
 
+        total_pasted = 0
         for cat_name, pairs in categories.items():
-            bg = bg_orig.copy()
             size_cfg = CATEGORY_SIZE.get(cat_name, DEFAULT_SIZE)
             place_cfg = CATEGORY_PLACEMENT.get(cat_name, DEFAULT_PLACEMENT)
 
@@ -236,25 +236,16 @@ def main():
                 avg_size
             )
 
-            out_name = f"{bg_name}_{cat_name}.png"
             print(f"  [{cat_name}] pasting {count} objects (size ~{avg_size}px, formation: {place_cfg['formation']})")
 
-            pasted = 0
             for pos_x, pos_y in positions:
                 fg_path, mask_path = random.choice(pairs)
-                # 개체마다 약간의 크기 변동
                 obj_size = avg_size + random.randint(-3, 3)
                 obj_size = max(size_cfg["min"], min(size_cfg["max"], obj_size))
 
                 fg, mask = load_foreground(fg_path, mask_path, obj_size)
                 if fg is None:
                     continue
-
-                # 랜덤 회전 (위성 시점이므로 360도 회전 자연스러움)
-                angle = random.randint(0, 359)
-                M = cv2.getRotationMatrix2D((fg.shape[1]//2, fg.shape[0]//2), angle, 1.0)
-                fg = cv2.warpAffine(fg, M, (fg.shape[1], fg.shape[0]))
-                mask = cv2.warpAffine(mask, M, (mask.shape[1], mask.shape[0]))
 
                 success, bbox = paste_object(bg, fg, mask, pos_x, pos_y)
                 if success:
@@ -264,19 +255,20 @@ def main():
                         "bbox": bbox, "area": bbox[2] * bbox[3], "iscrowd": 0
                     })
                     ann_id += 1
-                    pasted += 1
+                    total_pasted += 1
 
-            # 저장
-            out_path = os.path.join(args.output_dir, out_name)
-            cv2.imwrite(out_path, bg)
+        # 배경 1장당 이미지 1장 저장 (모든 카테고리 포함)
+        out_name = f"{bg_name}_all.png"
+        out_path = os.path.join(args.output_dir, out_name)
+        cv2.imwrite(out_path, bg)
 
-            coco["images"].append({
-                "id": image_id,
-                "file_name": out_name,
-                "width": bg_w, "height": bg_h
-            })
-            image_id += 1
-            print(f"    -> {pasted} objects pasted, saved {out_name}")
+        coco["images"].append({
+            "id": image_id,
+            "file_name": out_name,
+            "width": bg_w, "height": bg_h
+        })
+        image_id += 1
+        print(f"  -> total {total_pasted} objects pasted, saved {out_name}")
 
     # COCO JSON 저장
     if args.output_label:
