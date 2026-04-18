@@ -88,18 +88,26 @@ def main():
         img_files = sorted(glob(os.path.join(cat_input, '*.png')) + glob(os.path.join(cat_input, '*.jpg')))
         print(f"  [{cat_name}] {len(img_files)} images")
 
+        skipped = 0
+        processed = 0
         for img_path in img_files:
+            filename = os.path.basename(img_path)
+            out_path = os.path.join(cat_output, filename)
+
+            # 이미 처리된 파일은 건너뛰기
+            if os.path.exists(out_path):
+                skipped += 1
+                continue
+
             img_bgr = cv2.imread(img_path)
             if img_bgr is None:
                 continue
 
             mask = segment_fn(img_bgr)
-
-            filename = os.path.basename(img_path)
-            out_path = os.path.join(cat_output, filename)
             cv2.imwrite(out_path, mask)
+            processed += 1
 
-        print(f"    -> saved to {cat_output}/")
+        print(f"    -> {processed} processed, {skipped} skipped (already exists)")
 
     print(f"\nDone! Masks saved to {args.output_dir}/")
 
