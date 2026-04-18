@@ -113,10 +113,63 @@ COCO 기준 small object (area < 32² = 1024px) 전용 augmentation 파이프라
 ### 추가된 스크립트
 - `generation/text2im.py` — `--prompt_template`, `--image_size`, 커스텀 카테고리 JSON 지원
 - `generation/gen_small_object_in_scene.py` — SD 장면 내 small object 직접 생성 (실험용)
-- `generation/military_categories.json` — 군사 커스텀 카테고리 (tank, soldier, fighter_craft)
+- `generation/military_categories.json` — 군사 커스텀 카테고리 (tank, soldier, car)
 - `segment_methods/gen_bbox_labels.py` — 생성 이미지에서 bbox label 추출 (COCO JSON)
 - `segment_methods/visualize_bbox.py` — bbox 시각화
 
 ### 군사 카테고리 LVIS 매핑
 - army_tank (id=1058, rare), fighter_jet (id=436), gun (id=523), helicopter (id=555), rifle (id=884)
 - soldier는 LVIS에 없음 → 커스텀 카테고리로 생성 가능
+
+## 논문 계획 — 한국군사과학기술학회
+
+### 논문 개요
+생성 AI(Stable Diffusion) 기반 군사 합성 데이터 생성 파이프라인을 제안하고, 합성 데이터만으로 학습한 모델이 실제 군사 이미지에서 유효한 탐지 성능을 달성함을 다중 모델 실험으로 검증한다.
+
+### Contributions
+1. **군사 도메인 합성 데이터 생성 파이프라인** — SD + CLIP 세그멘테이션 + Copy-Paste 결합, 카테고리별 배치 패턴(병사 군집, 전차 종대, 항공기 편대) 등 도메인 지식 반영
+2. **합성 데이터 실용성 실증 검증** — 합성 데이터로만 학습한 모델이 실제 이미지에서 유의미한 탐지 성능 달성, 실제+합성 혼합 시 성능 향상 효과 확인, 다중 모델 아키텍처에서 일관된 결과로 모델 비종속적 일반화 입증
+3. **군사 객체 탐지 벤치마크 테스트셋 구축** — 공개 데이터셋(DOTA, Open Images, Roboflow)에서 군사 이미지를 수집·통합한 표준화된 평가셋
+
+### 실험 설계
+
+**카테고리**: tank, soldier, car (3개)
+
+**모델**: YOLOv5, YOLOv8, YOLOv11, RT-DETR
+
+**데이터 규모**:
+- Train (합성): 4,000~8,000장 (카테고리당 1,000~2,000)
+- Train (실제): 수집 가능한 만큼
+- Test (실제): 200~400장 (DOTA + Open Images + Roboflow 혼합, 카테고리당 50~100장)
+
+**실험 구성**:
+| 실험 | Train | Test | 증명하는 것 |
+|------|-------|------|-----------|
+| Exp1 | 합성 데이터 | 실제 이미지 | 합성 데이터만으로 실전 성능 확보 가능 |
+| Exp2 | 실제 데이터 | 실제 이미지 | baseline (비교 기준) |
+| Exp3 | 실제 + 합성 | 실제 이미지 | 합성 데이터의 보강(augmentation) 효과 |
+
+**기대 결과**: Exp1이 Exp2의 70~80% 달성 시 합성 데이터 실용성 입증. Exp3 > Exp2이면 보강 효과 입증. Exp1이 baseline을 뛰어넘을 필요 없음.
+
+**결과 테이블 형식**:
+```
+┌─────────┬───────────┬───────────┬───────────────┐
+│  Model  │ Exp1(합성) │ Exp2(실제) │ Exp3(실제+합성) │
+├─────────┼───────────┼───────────┼───────────────┤
+│ YOLOv5  │  mAP      │  mAP      │  mAP          │
+│ YOLOv8  │  mAP      │  mAP      │  mAP          │
+│ YOLOv11 │  mAP      │  mAP      │  mAP          │
+│ RT-DETR │  mAP      │  mAP      │  mAP          │
+└─────────┴───────────┴───────────┴───────────────┘
+```
+
+### 실행 단계 (TODO)
+
+1. **[ ] 테스트셋 구축** — DOTA, Open Images, Roboflow에서 군사 이미지 수집, annotation 통일 (COCO format)
+2. **[ ] 합성 학습 데이터 생성** — X-Paste 파이프라인으로 카테고리당 1,000~2,000장 생성
+3. **[ ] 실제 학습 데이터 수집** — 공개 데이터셋에서 학습용 실제 이미지 확보
+4. **[ ] YOLO 학습 환경 구축** — YOLOv5, YOLOv8, YOLOv11, RT-DETR 학습 스크립트 준비
+5. **[ ] Exp1 실행** — 합성 데이터로 4개 모델 학습 → 실제 테스트셋 평가
+6. **[ ] Exp2 실행** — 실제 데이터로 4개 모델 학습 → 실제 테스트셋 평가 (baseline)
+7. **[ ] Exp3 실행** — 실제+합성 혼합 데이터로 4개 모델 학습 → 실제 테스트셋 평가
+8. **[ ] 결과 분석 및 논문 작성**
