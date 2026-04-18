@@ -34,62 +34,44 @@ def main():
         print("xformers not available, using default attention")
     pipe.to(device)
 
-    # 전략: 3가지 다른 군사 환경 배경
-    # - 객체를 명시적으로 배제하는 negative prompt 사용
-    # - 위성/드론 시점 (top-down)으로 통일 → small object paste와 시점 일관성
-    # - 1024x576 (16:9) 생성 후 1920x1080 리사이즈
+    NEGATIVE = "vehicles, tanks, people, soldiers, aircraft, text, watermark, blurry"
+
     backgrounds = [
-        {
-            "name": "desert_base",
-            "prompt": "satellite view of empty desert terrain with dirt roads, "
-                      "military base area, flat sandy ground, no vehicles, "
-                      "no people, aerial photography, top down view, high resolution",
-            "negative": "vehicles, tanks, people, soldiers, aircraft, buildings, text, watermark",
-        },
-        {
-            "name": "airfield",
-            "prompt": "drone photograph of empty military airfield runway, "
-                      "concrete tarmac, grass field beside runway, "
-                      "no aircraft, no vehicles, no people, "
-                      "aerial view, top down, clear weather",
-            "negative": "planes, jets, vehicles, people, text, watermark, blurry",
-        },
-        {
-            "name": "open_field",
-            "prompt": "satellite image of open green field with dirt paths, "
-                      "rural terrain, farmland, no buildings, no vehicles, "
-                      "no people, birds eye view, top down photograph",
-            "negative": "buildings, vehicles, people, urban, city, text, watermark",
-        },
+        {"name": "desert", "prompt": "satellite view of empty desert terrain with dirt roads, flat sandy ground, aerial photography, top down view, high resolution"},
+        {"name": "airfield", "prompt": "drone photograph of empty military airfield runway, concrete tarmac, grass field beside runway, aerial view, top down, clear weather"},
+        {"name": "open_field", "prompt": "satellite image of open green field with dirt paths, rural terrain, farmland, birds eye view, top down photograph"},
+        {"name": "forest", "prompt": "aerial view of forest clearing with trees around edges, dirt ground, top down satellite photograph, high resolution"},
+        {"name": "urban", "prompt": "satellite view of empty urban road intersection, asphalt streets, sidewalks, top down aerial photograph, no cars, no people"},
+        {"name": "mountain", "prompt": "drone view of rocky mountain terrain, gravel paths, sparse vegetation, aerial top down photograph, clear day"},
+        {"name": "snow", "prompt": "satellite view of snowy flat terrain, winter landscape, white ground, dirt road visible, top down aerial photograph"},
+        {"name": "coastal", "prompt": "aerial view of sandy coastal area, beach terrain, flat ground near shoreline, top down satellite photograph"},
+        {"name": "grassland", "prompt": "satellite view of wide grassland plain, green meadow, scattered dirt trails, aerial top down photograph"},
+        {"name": "muddy_road", "prompt": "drone view of muddy unpaved road through countryside, wet terrain, puddles, aerial top down photograph"},
+        {"name": "highway", "prompt": "satellite view of empty highway road, asphalt surface, lane markings, roadside, top down aerial photograph, no cars"},
+        {"name": "industrial", "prompt": "aerial view of empty industrial yard, concrete ground, warehouse area, top down satellite photograph, no vehicles"},
     ]
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    for i, bg in enumerate(backgrounds):
-        if i >= args.samples:
-            break
+    total = 0
+    for bg in backgrounds:
+        for s in range(args.samples):
+            print(f"[{total+1}] Generating: {bg['name']}_{s}")
 
-        print(f"[{i+1}/{args.samples}] Generating: {bg['name']}")
-        print(f"  Prompt: {bg['prompt'][:80]}...")
+            with torch.no_grad():
+                result = pipe(
+                    bg["prompt"],
+                    negative_prompt=NEGATIVE,
+                    num_inference_steps=50,
+                    guidance_scale=7.5,
+                    height=640,
+                    width=640,
+                ).images[0]
 
-        with torch.no_grad():
-            result = pipe(
-                bg["prompt"],
-                negative_prompt=bg["negative"],
-                num_inference_steps=50,
-                guidance_scale=7.5,
-                height=576,
-                width=1024,
-            ).images[0]
+            result.save(os.path.join(args.output_dir, f"{bg['name']}_{s:03d}.png"))
+            total += 1
 
-        # 1920x1080으로 리사이즈
-        result_hd = result.resize((1920, 1080), Image.LANCZOS)
-
-        result.save(os.path.join(args.output_dir, f"{bg['name']}_1024x576.png"))
-        result_hd.save(os.path.join(args.output_dir, f"{bg['name']}_1920x1080.png"))
-        print(f"  -> saved {bg['name']}")
-
-    print(f"\nDone! {args.samples} backgrounds in {args.output_dir}/")
+    print(f"\nDone! {total} backgrounds in {args.output_dir}/")
 
 
 if __name__ == "__main__":

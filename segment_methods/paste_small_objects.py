@@ -19,48 +19,34 @@ from glob import glob
 import random
 
 
-# 카테고리별 크기 설정 (위성/드론 시점 기준, pixels)
-# 기준: soldier 40px = 1.8m → 1m ≈ 22px
-# soldier < tank < fighter aircraft
+# 카테고리별 크기 설정 (640x640 배경 기준)
 CATEGORY_SIZE = {
-    "soldier": {"min": 35, "max": 45},           # 1.8m → ~40px
-    "tank": {"min": 140, "max": 170},             # 7m 길이 → ~155px
-    "fighter aircraft": {"min": 300, "max": 360},  # 15m 길이 → ~333px
-    "fighter_craft": {"min": 300, "max": 360},
-    "fighter_jet": {"min": 300, "max": 360},
+    "soldier": {"min": 40, "max": 70},
+    "tank": {"min": 80, "max": 140},
+    "car": {"min": 60, "max": 100},
 }
 
-# 카테고리별 배치 패턴 (군사 현실성 반영)
+# 카테고리별 배치 패턴
 CATEGORY_PLACEMENT = {
     "soldier": {
-        "count": (8, 15),        # 분대~소대 규모
-        "formation": "cluster",  # 밀집 대형
-        "spacing": (15, 40),     # 병사 간 간격 (~1-2m)
+        "count": (3, 8),
+        "formation": "cluster",
+        "spacing": (15, 40),
     },
     "tank": {
-        "count": (3, 5),         # 소대 규모
-        "formation": "line",     # 종대/횡대
-        "spacing": (180, 280),   # 전차 간 간격 (~8-12m)
-    },
-    "fighter aircraft": {
-        "count": (2, 3),         # 편대 규모
-        "formation": "line",     # 활주로/주기장 정렬
-        "spacing": (380, 500),   # 항공기 간 간격 (~17-22m)
-    },
-    "fighter_craft": {
-        "count": (2, 3),
+        "count": (2, 4),
         "formation": "line",
-        "spacing": (380, 500),
+        "spacing": (100, 180),
     },
-    "fighter_jet": {
-        "count": (2, 3),
-        "formation": "line",
-        "spacing": (380, 500),
+    "car": {
+        "count": (2, 5),
+        "formation": "random",
+        "spacing": (80, 150),
     },
 }
 
-DEFAULT_SIZE = {"min": 15, "max": 30}
-DEFAULT_PLACEMENT = {"count": (3, 8), "formation": "random", "spacing": (20, 40)}
+DEFAULT_SIZE = {"min": 40, "max": 80}
+DEFAULT_PLACEMENT = {"count": (2, 5), "formation": "random", "spacing": (40, 80)}
 
 
 def load_foreground(img_path, mask_path, target_size):
@@ -173,6 +159,8 @@ def main():
     parser.add_argument('--bg_dir', type=str, required=True, help='배경 이미지 디렉토리')
     parser.add_argument('--output_dir', type=str, required=True, help='합성 이미지 출력')
     parser.add_argument('--output_label', type=str, default=None, help='COCO JSON label 출력')
+    parser.add_argument('--num_images', type=int, default=0,
+                        help='생성할 총 이미지 수 (0이면 배경 수만큼)')
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
 
@@ -181,10 +169,8 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # 배경 이미지 로드 (1920x1080만)
-    bg_files = sorted(glob(os.path.join(args.bg_dir, '*1920x1080*')))
-    if not bg_files:
-        bg_files = sorted(glob(os.path.join(args.bg_dir, '*.png')) + glob(os.path.join(args.bg_dir, '*.jpg')))
+    # 배경 이미지 로드
+    bg_files = sorted(glob(os.path.join(args.bg_dir, '*.png')) + glob(os.path.join(args.bg_dir, '*.jpg')))
     print(f"Backgrounds: {len(bg_files)}")
 
     # 카테고리별 전경 + mask 수집
@@ -212,14 +198,18 @@ def main():
     image_id = 0
     ann_id = 0
 
-    # 각 배경에 모든 카테고리를 한 이미지에 합성
-    for bg_path in bg_files:
-        bg_name = os.path.splitext(os.path.basename(bg_path))[0]
+    # num_images가 지정되면 배경을 랜덤 반복 사용
+    num_images = args.num_images if args.num_images > 0 else len(bg_files)
+
+    for idx in range(num_images):
+        bg_path = bg_files[idx % len(bg_files)] if idx < len(bg_files) else random.choice(bg_files)
         bg = cv2.imread(bg_path)
         if bg is None:
             continue
+        bg = bg.copy()
         bg_h, bg_w = bg.shape[:2]
-        print(f"\nBackground: {bg_name} ({bg_w}x{bg_h})")
+        bg_name = f"img_{idx:05d}"
+        print(f"\n[{idx+1}/{num_images}] Background: {os.path.basename(bg_path)} ({bg_w}x{bg_h})")
 
         total_pasted = 0
         for cat_name, pairs in categories.items():
@@ -257,8 +247,7 @@ def main():
                     ann_id += 1
                     total_pasted += 1
 
-        # 배경 1장당 이미지 1장 저장 (모든 카테고리 포함)
-        out_name = f"{bg_name}_all.png"
+        out_name = f"{bg_name}.png"
         out_path = os.path.join(args.output_dir, out_name)
         cv2.imwrite(out_path, bg)
 
