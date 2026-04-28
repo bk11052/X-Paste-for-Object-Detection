@@ -13,8 +13,15 @@ COPY requirements.txt /workspace/requirements.txt
 # 1. requirements.txt 설치
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 2. diffusers/xformers 버전 고정 (PyTorch 2.1.0 + CUDA 11.8 호환)
-RUN pip install --no-cache-dir "diffusers==0.21.4" "transformers<4.36" "huggingface_hub<0.24"
+# 2. diffusers/transformers/xformers 버전 고정 (PyTorch 2.1.0 + CUDA 11.8 호환)
+# - transformers 4.40.2: Depth-Anything V2 + SegFormer 지원, torch 2.1 호환 sweet spot
+# - tokenizers 0.19.1: transformers 4.40 의존 버전
+RUN pip install --no-cache-dir \
+        "diffusers==0.21.4" \
+        "transformers==4.40.2" \
+        "tokenizers==0.19.1" \
+        "huggingface_hub<0.24" \
+        matplotlib
 RUN pip install --no-cache-dir xformers==0.0.22.post7 --index-url https://download.pytorch.org/whl/cu118
 
 # 3. omegaconf (text2im.py), accelerate (모델 로딩 가속)
