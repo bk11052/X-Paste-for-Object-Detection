@@ -20,6 +20,10 @@ def main():
     parser.add_argument('--output_dir', type=str, default='output/Military_BG')
     parser.add_argument('--samples', type=int, default=3)
     parser.add_argument('--gpu', type=int, default=0)
+    parser.add_argument('--prompt', type=str, default=None,
+                        help='If set, overrides the built-in background list and generates --samples images from this single prompt.')
+    parser.add_argument('--name', type=str, default='custom',
+                        help='Filename prefix used when --prompt is provided.')
     args = parser.parse_args()
 
     device = torch.device(f'cuda:{args.gpu}')
@@ -50,6 +54,9 @@ def main():
         {"name": "highway", "prompt": "satellite view of empty highway road, asphalt surface, lane markings, roadside, top down aerial photograph, no cars"},
         {"name": "industrial", "prompt": "aerial view of empty industrial yard, concrete ground, warehouse area, top down satellite photograph, no vehicles"},
     ]
+
+    if args.prompt is not None:
+        backgrounds = [{"name": args.name, "prompt": args.prompt}]
 
     os.makedirs(args.output_dir, exist_ok=True)
 
