@@ -29,7 +29,7 @@ scenarios:
     background_prompt_seed: "urban combat street with smoke in distance, photorealistic war photography, no people, empty road"
     background_negative: ""
     instances:
-      - {category: soldier, pose: "walking soldier in tactical gear, full body, side view", count: 1, distance_bias: mid}
+      - {category: soldier, pose: "walking soldier in tactical gear, full body, side view", count: 1, distance_bias: near}
     n_backgrounds: 16
 
   - id: 2
