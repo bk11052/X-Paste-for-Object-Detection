@@ -91,6 +91,9 @@ def main() -> int:
     ap.add_argument("--max_area", type=float, default=0.95, help="discard if mask covers > this fraction (likely full-image)")
     ap.add_argument("--min_clip", type=float, default=18.0, help="discard if CLIP score below this (long prompts have lower scores)")
     ap.add_argument("--prompt_for_seg", default="", help="override: text prompt for CLIPSeg (default: use pose_prompt from results.json)")
+    ap.add_argument("--use_category_prompt", action="store_true",
+                    help="use just the category name (e.g. 'soldier', 'tank') as seg prompt instead of full pose. "
+                         "More reliable across pose variations.")
     args = ap.parse_args()
 
     in_root = Path(args.input_dir)
@@ -114,7 +117,12 @@ def main() -> int:
     dropped_total = 0
     for it in items:
         slug = it["name"]
-        seg_text = args.prompt_for_seg or it.get("pose_prompt", slug.replace("_", " "))
+        if args.prompt_for_seg:
+            seg_text = args.prompt_for_seg
+        elif args.use_category_prompt:
+            seg_text = it.get("category", slug.split("__")[0])
+        else:
+            seg_text = it.get("pose_prompt", slug.replace("_", " "))
         in_dir = in_root / slug
         if not in_dir.exists():
             print(f"[skip] {slug}: input dir missing")
