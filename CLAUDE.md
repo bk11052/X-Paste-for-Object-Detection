@@ -100,76 +100,81 @@ LVIS images are shared with COCO (symlink `coco/train2017`).
 
 Pre-computed metadata in `datasets/metadata/`: CLIP embeddings (`lvis_v1_clip_a+cname.npy`), category info (`lvis_v1_train_cat_info.json`).
 
-## Current Work: Small Object 생성 & Copy-Paste
-
-COCO 기준 small object (area < 32² = 1024px) 전용 augmentation 파이프라인 구축. 군사 카테고리(tank, soldier, fighter_craft) 타겟.
-
-### 진행 현황
-1. **[완료] Small object 생성** — `generation/text2im.py`에 `--prompt_template`, `--image_size` 추가
-2. **[완료] SD 직접 생성 실험** — SD 1.5는 장면 내 tiny object 생성 불가 (512x512 학습 한계). 생성→축소 paste 방식 채택
-3. **[진행] Bbox 단위 label 생성** — `segment_methods/gen_bbox_labels.py` (독립 스크립트, COCO JSON 출력)
-4. **[예정] Small object copy-paste** — 생성된 객체를 1920x1080 배경에 20x20으로 paste
-
-### 추가된 스크립트
-- `generation/text2im.py` — `--prompt_template`, `--image_size`, 커스텀 카테고리 JSON 지원
-- `generation/gen_small_object_in_scene.py` — SD 장면 내 small object 직접 생성 (실험용)
-- `generation/military_categories.json` — 군사 커스텀 카테고리 (tank, soldier, car)
-- `segment_methods/gen_bbox_labels.py` — 생성 이미지에서 bbox label 추출 (COCO JSON)
-- `segment_methods/visualize_bbox.py` — bbox 시각화
-
-### 군사 카테고리 LVIS 매핑
-- army_tank (id=1058, rare), fighter_jet (id=436), gun (id=523), helicopter (id=555), rifle (id=884)
-- soldier는 LVIS에 없음 → 커스텀 카테고리로 생성 가능
-
 ## 논문 계획 — 한국군사과학기술학회
 
-### 논문 개요
-생성 AI(Stable Diffusion) 기반 군사 합성 데이터 생성 파이프라인을 제안하고, 합성 데이터만으로 학습한 모델이 실제 군사 이미지에서 유효한 탐지 성능을 달성함을 다중 모델 실험으로 검증한다.
+### 논문 개요 (2026-05-03 방향 전환)
+
+**Scenario-aware Copy-Paste Augmentation** — LLM이 생성한 시나리오 맥락 배경(SDXL single-shot) + 시나리오별 자세 인스턴스 풀(SD 1.5) + scene-aware paste(depth/segmentation 기반 위치/크기 자동 결정).
+
+기존 X-Paste(랜덤 paste, 일반 배경)와 달리:
+- 배경은 시나리오 맥락 반영 (전장 거리, 사막의 대치, 야간 작전 등)
+- 인스턴스는 시나리오 자세 (걷는, 사격, 마주보는 등)
+- Paste는 scene-aware (DepthAnything-V2 + SegFormer ADE20K)
+
+리뷰어 대응 narrative:
+- "왜 single-shot 안 함?" → SDXL single-shot은 소형 객체와 자세 제어가 약함을 정량 입증, 우리가 보완.
+- "왜 X-Paste랑 다름?" → ① 시나리오 배경, ② 시나리오 자세 인스턴스, ③ scene-aware paste.
 
 ### Contributions
-1. **군사 도메인 합성 데이터 생성 파이프라인** — SD + CLIP 세그멘테이션 + Copy-Paste 결합, 카테고리별 배치 패턴(병사 군집, 전차 종대, 항공기 편대) 등 도메인 지식 반영
-2. **합성 데이터 실용성 실증 검증** — 합성 데이터로만 학습한 모델이 실제 이미지에서 유의미한 탐지 성능 달성, 실제+합성 혼합 시 성능 향상 효과 확인, 다중 모델 아키텍처에서 일관된 결과로 모델 비종속적 일반화 입증
-3. **군사 객체 탐지 벤치마크 테스트셋 구축** — 공개 데이터셋(DOTA, Open Images, Roboflow)에서 군사 이미지를 수집·통합한 표준화된 평가셋
+1. **시나리오 맥락 배경 풀** — GPT가 시나리오 프롬프트 생성 → SDXL이 객체 없는 맥락 배경을 single-shot 생성
+2. **시나리오 자세 인스턴스 풀** — 기존 SD 1.5 인스턴스 풀 확장, 자세별(walking/kneeling/facing 등) prompt template 사용
+3. **Scene-aware paste** — DepthAnything-V2 depth로 거리, SegFormer ADE20K로 가능 영역(ground/road/sky) 식별, depth 기반 자동 scale 산출. 소형 객체는 depth가 큰(먼) 영역에 자동 paste되어 자연 축소
+4. **군사 객체 탐지 벤치마크** — DOTA + Open Images + Roboflow 통합 표준 testset
 
-### 실험 설계
+### 시나리오 카테고리 (10개 엣지 케이스)
 
-**카테고리**: tank, soldier, car (3개)
+| # | 시나리오 | 인스턴스 자세 | 도전 |
+|---|---------|--------------|------|
+| 1 | 걸어오는 군인 | walking_soldier × 1 | 자세 |
+| 2 | 분대 군집 | mixed_soldier × 5 | 다중 |
+| 3 | 마주보는 탱크 | tank_left + tank_right | 공간 관계 |
+| 4 | 탱크 종대 | tank_side × 4 | 선형 배치 |
+| 5 | 호송 차량 행렬 | car_side × 6 | 다수 차량 |
+| 6 | 야간 정찰 | walking_soldier × 2 | 저조도 |
+| 7 | 연막 속 진격 | running_soldier × 3 | 가림 |
+| 8 | 위장 군인 | prone_soldier × 1 | 배경 융합 |
+| 9 | 멀리 보이는 순찰대 | walking_soldier × 4 (소형) | 소형 객체 |
+| 10 | 지평선의 탱크 | tank × 2 (소형) | 소형 객체 |
 
-**모델**: YOLOv5, YOLOv8, YOLOv11, RT-DETR
+### 실험 설계 (6개 × 3 모델 = 18 runs)
 
-**데이터 규모**:
-- Train (합성): 4,000~8,000장 (카테고리당 1,000~2,000)
-- Train (실제): 수집 가능한 만큼
-- Test (실제): 200~400장 (DOTA + Open Images + Roboflow 혼합, 카테고리당 50~100장)
+**카테고리**: tank, soldier, car
+**모델**: YOLOv8, YOLOv11, RT-DETR
+**평가**: mAP + AP_small/medium/large + 카테고리별 AP
 
-**실험 구성**:
-| 실험 | Train | Test | 증명하는 것 |
-|------|-------|------|-----------|
-| Exp1 | 합성 데이터 | 실제 이미지 | 합성 데이터만으로 실전 성능 확보 가능 |
-| Exp2 | 실제 데이터 | 실제 이미지 | baseline (비교 기준) |
-| Exp3 | 실제 + 합성 | 실제 이미지 | 합성 데이터의 보강(augmentation) 효과 |
+| Exp | Train | 평가 |
+|-----|-------|------|
+| Exp-1 | 실제 데이터 only | 실제 testset (baseline) |
+| Exp-2 | X-Paste random paste (기존) | 실제 testset |
+| Exp-3 | SDXL single-shot only (객체까지 SDXL) | 실제 testset |
+| Exp-4 | SDXL 시나리오 배경 + random paste | 실제 testset |
+| Exp-5 | **SDXL 시나리오 배경 + scene-aware paste (제안)** | 실제 testset |
+| Exp-6 | Exp-5 + 실제 데이터 혼합 | 실제 testset |
 
-**기대 결과**: Exp1이 Exp2의 70~80% 달성 시 합성 데이터 실용성 입증. Exp3 > Exp2이면 보강 효과 입증. Exp1이 baseline을 뛰어넘을 필요 없음.
+핵심 비교: Exp-2 vs Exp-5 (scene-aware 효과), Exp-3 vs Exp-5 (single-shot vs 우리), Exp-4 vs Exp-5 (paste 방식 ablation), Exp-6 vs Exp-1 (보강 효과).
 
-**결과 테이블 형식**:
-```
-┌─────────┬───────────┬───────────┬───────────────┐
-│  Model  │ Exp1(합성) │ Exp2(실제) │ Exp3(실제+합성) │
-├─────────┼───────────┼───────────┼───────────────┤
-│ YOLOv5  │  mAP      │  mAP      │  mAP          │
-│ YOLOv8  │  mAP      │  mAP      │  mAP          │
-│ YOLOv11 │  mAP      │  mAP      │  mAP          │
-│ RT-DETR │  mAP      │  mAP      │  mAP          │
-└─────────┴───────────┴───────────┴───────────────┘
-```
+### 새 파이프라인 (Phase 1 — 신규 스크립트)
 
-### 실행 단계 (TODO)
+| 파일 | 역할 |
+|------|------|
+| `configs/scenarios.yaml` | 10개 시나리오 정의 (배경 프롬프트 슬롯 + 인스턴스 자세 spec) |
+| `generation/gen_scenario_prompts.py` | GPT-4 API로 시나리오 배경 프롬프트 확장 + 캐시 |
+| `generation/gen_singleshot_scenes.py` | SDXL `StableDiffusionXLPipeline`로 배경 생성 |
+| `generation/gen_pose_instances.py` | SD 1.5 + 자세별 prompt_template으로 인스턴스 생성 (`text2im.py` 확장) |
+| `generation/scene_analyzer.py` | DepthAnything-V2 + SegFormer ADE20K wrapper |
+| `generation/adaptive_paste_planner.py` | depth/seg 기반 paste 위치/크기 결정 알고리즘 |
+| `generation/compose_scene.py` | 통합 파이프라인 + COCO JSON 출력 |
 
-1. **[ ] 테스트셋 구축** — DOTA, Open Images, Roboflow에서 군사 이미지 수집, annotation 통일 (COCO format)
-2. **[ ] 합성 학습 데이터 생성** — X-Paste 파이프라인으로 카테고리당 1,000~2,000장 생성
-3. **[ ] 실제 학습 데이터 수집** — 공개 데이터셋에서 학습용 실제 이미지 확보
-4. **[ ] YOLO 학습 환경 구축** — YOLOv5, YOLOv8, YOLOv11, RT-DETR 학습 스크립트 준비
-5. **[ ] Exp1 실행** — 합성 데이터로 4개 모델 학습 → 실제 테스트셋 평가
-6. **[ ] Exp2 실행** — 실제 데이터로 4개 모델 학습 → 실제 테스트셋 평가 (baseline)
-7. **[ ] Exp3 실행** — 실제+합성 혼합 데이터로 4개 모델 학습 → 실제 테스트셋 평가
-8. **[ ] 결과 분석 및 논문 작성**
+### 재사용 자산 (기존)
+- `generation/text2im.py` — `--prompt_template`, `--image_size` 지원 (자세별 인스턴스 생성에 활용)
+- `generation/military_categories.json` — tank, soldier, car
+- `segment_methods/reseg.py` + `clean_pool.py` — 인스턴스 세그멘테이션/필터링 (자세 인스턴스에 그대로 적용)
+- `xpaste/data/transforms/custom_cp_method.py` — alpha/poisson blending
+- `segment_methods/gen_bbox_labels.py` — bbox 라벨 추출 참고
+
+### Plan 파일
+세부 단계 및 알고리즘은 `/Users/kyu216/.claude/plans/rosy-splashing-whistle.md` 참조.
+
+### 군사 카테고리 LVIS 매핑 (참고)
+- army_tank (id=1058, rare), fighter_jet (id=436), gun (id=523), helicopter (id=555), rifle (id=884)
+- soldier는 LVIS에 없음 → 커스텀 카테고리

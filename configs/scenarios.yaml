@@ -1,0 +1,117 @@
+# Scenario definitions for Scenario-aware Copy-Paste Augmentation
+#
+# Each scenario specifies:
+#   - background_prompt_seed: short seed phrase for GPT to expand into detailed SDXL prompts
+#                             (object names should NOT appear here — backgrounds are object-free)
+#   - background_negative: SDXL negative prompt to suppress objects in the background
+#   - instances: list of {category, pose, count, distance_bias}
+#       category: tank | soldier | car
+#       pose: token used for SD 1.5 instance pool generation prompt (e.g. "walking soldier")
+#       count: number of instances to paste in the final composed image
+#       distance_bias: near | mid | far  (controls which depth band is preferred for paste)
+#   - n_backgrounds: number of background variants to generate per scenario (for paper figure + training)
+#
+# These are SEED definitions. Detailed SDXL prompts are produced by gen_scenario_prompts.py via GPT.
+
+global:
+  image_size: [1024, 576]   # 16:9 widescreen, native SDXL ratio
+  shared_negative: >
+    cartoon, anime, lowres, blurry, jpeg artifacts, distorted, deformed,
+    text, watermark, signature, oversaturated, painting, drawing,
+    soldiers, people, person, human, vehicles, tanks, cars, trucks,
+    weapons, military equipment
+
+scenarios:
+
+  - id: 1
+    name: walking_soldier
+    title_kr: "걸어오는 군인"
+    background_prompt_seed: "urban combat street with smoke in distance, photorealistic war photography, no people, empty road"
+    background_negative: ""
+    instances:
+      - {category: soldier, pose: "walking soldier in tactical gear, full body, side view", count: 1, distance_bias: mid}
+    n_backgrounds: 16
+
+  - id: 2
+    name: squad_cluster
+    title_kr: "분대 군집"
+    background_prompt_seed: "open military assembly area in pine forest, daylight, photorealistic, empty ground, no people"
+    background_negative: ""
+    instances:
+      - {category: soldier, pose: "standing soldier in tactical gear",   count: 2, distance_bias: mid}
+      - {category: soldier, pose: "kneeling soldier in tactical gear",   count: 2, distance_bias: mid}
+      - {category: soldier, pose: "soldier from behind in tactical gear", count: 1, distance_bias: near}
+    n_backgrounds: 16
+
+  - id: 3
+    name: tanks_facing
+    title_kr: "마주보는 탱크"
+    background_prompt_seed: "wide dusty plain after battle, scorched ground, wide horizon, photorealistic, no vehicles"
+    background_negative: ""
+    instances:
+      - {category: tank, pose: "main battle tank facing left, side view", count: 1, distance_bias: mid}
+      - {category: tank, pose: "main battle tank facing right, side view", count: 1, distance_bias: mid}
+    n_backgrounds: 16
+
+  - id: 4
+    name: tank_column
+    title_kr: "탱크 종대"
+    background_prompt_seed: "long straight military road through desert, vanishing point, photorealistic, no vehicles"
+    background_negative: ""
+    instances:
+      - {category: tank, pose: "main battle tank three quarter view from behind", count: 4, distance_bias: mid}
+    n_backgrounds: 16
+
+  - id: 5
+    name: convoy_line
+    title_kr: "호송 차량 행렬"
+    background_prompt_seed: "convoy route on rural road, daylight, photorealistic, no vehicles, empty road"
+    background_negative: ""
+    instances:
+      - {category: car, pose: "military humvee three quarter view", count: 6, distance_bias: mid}
+    n_backgrounds: 16
+
+  - id: 6
+    name: night_patrol
+    title_kr: "야간 정찰"
+    background_prompt_seed: "urban night street, dim street lights, deep shadows, photorealistic, no people"
+    background_negative: ""
+    instances:
+      - {category: soldier, pose: "soldier walking at night with night vision goggles, full body", count: 2, distance_bias: near}
+    n_backgrounds: 16
+
+  - id: 7
+    name: smoke_advance
+    title_kr: "연막 속 진격"
+    background_prompt_seed: "smoke filled battlefield with debris and dust, photorealistic, no soldiers"
+    background_negative: ""
+    instances:
+      - {category: soldier, pose: "running soldier in tactical gear, full body, dynamic pose", count: 3, distance_bias: mid}
+    n_backgrounds: 16
+
+  - id: 8
+    name: camouflaged_soldier
+    title_kr: "위장 군인"
+    background_prompt_seed: "tall grass field at forest edge, photorealistic ground perspective, no people"
+    background_negative: ""
+    instances:
+      - {category: soldier, pose: "prone soldier in ghillie suit, lying flat on ground", count: 1, distance_bias: mid}
+    n_backgrounds: 16
+
+  - id: 9
+    name: distant_patrol
+    title_kr: "멀리 보이는 순찰대"
+    background_prompt_seed: "vast desert plain with distant horizon, aerial wide shot, photorealistic, no people, empty"
+    background_negative: ""
+    instances:
+      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 4, distance_bias: far}
+    n_backgrounds: 16
+
+  - id: 10
+    name: horizon_tank
+    title_kr: "지평선의 탱크"
+    background_prompt_seed: "open horizon at dusk, vast plain, low golden light, photorealistic, no vehicles"
+    background_negative: ""
+    instances:
+      - {category: tank, pose: "main battle tank side view", count: 2, distance_bias: far}
+    n_backgrounds: 16
