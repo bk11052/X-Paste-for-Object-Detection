@@ -79,8 +79,11 @@ class PastePlan:
 @dataclass
 class PlannerConfig:
     n_candidates: int = 400         # candidate pixels sampled per instance spec
-    iou_threshold: float = 0.30     # max IoU between any two paste bboxes
-    margin_px: int = 4              # min pixel margin between bboxes (additive)
+    iou_threshold: float = 0.05     # max IoU between any two paste bboxes (low = strict)
+    margin_px: int = 8              # min pixel margin between bboxes (additive)
+    min_center_gap_ratio: float = 0.7
+    # min horizontal gap between two bbox centers expressed as fraction of larger bbox width;
+    # extra check on top of IoU because tall-narrow soldier bboxes can stack with low IoU
     max_attempts_per_count: int = 50
     min_inside_frame: float = 0.92  # require >= this fraction of bbox area inside frame
     edge_pad_px: int = 8            # additional inset from frame edges before clipping
@@ -227,8 +230,18 @@ def plan_paste(
                 continue
 
             overlap_hit = False
+            cx, _ = ((clipped[0] + clipped[2]) / 2, (clipped[1] + clipped[3]) / 2)
+            cw = clipped[2] - clipped[0]
             for prev in plans:
                 if iou(expand_bbox(clipped, cfg.margin_px), prev.bbox_xyxy) > cfg.iou_threshold:
+                    overlap_hit = True
+                    break
+                # horizontal center-distance check: prevents tall-narrow stacking
+                pcx = (prev.bbox_xyxy[0] + prev.bbox_xyxy[2]) / 2
+                pcw = prev.bbox_xyxy[2] - prev.bbox_xyxy[0]
+                # only enforce when both bboxes overlap vertically
+                vy_overlap = min(clipped[3], prev.bbox_xyxy[3]) - max(clipped[1], prev.bbox_xyxy[1])
+                if vy_overlap > 0 and abs(cx - pcx) < cfg.min_center_gap_ratio * max(cw, pcw):
                     overlap_hit = True
                     break
             if overlap_hit:
