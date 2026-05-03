@@ -82,6 +82,8 @@ class PlannerConfig:
     iou_threshold: float = 0.30     # max IoU between any two paste bboxes
     margin_px: int = 4              # min pixel margin between bboxes (additive)
     max_attempts_per_count: int = 50
+    min_inside_frame: float = 0.92  # require >= this fraction of bbox area inside frame
+    edge_pad_px: int = 8            # additional inset from frame edges before clipping
     seed: int = 0
 
 
@@ -121,6 +123,17 @@ def clip_bbox(bbox: tuple[int, int, int, int], W: int, H: int) -> tuple[int, int
     if x2 - x1 < 4 or y2 - y1 < 4:
         return None
     return (x1, y1, x2, y2)
+
+
+def bbox_inside_ratio(bbox: tuple[int, int, int, int], W: int, H: int) -> float:
+    x1, y1, x2, y2 = bbox
+    orig = (x2 - x1) * (y2 - y1)
+    if orig <= 0:
+        return 0.0
+    ix1, iy1 = max(0, x1), max(0, y1)
+    ix2, iy2 = min(W, x2), min(H, y2)
+    inside = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    return inside / orig
 
 
 def iou(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> float:
@@ -204,6 +217,11 @@ def plan_paste(
             d = float(scene.depth_norm[y, x])
             h_px = scale_from_depth(d, spec.category)
             bbox = bbox_from_anchor((x, y), spec.category, h_px)
+            # require enough of the bbox to be inside the frame (after edge_pad inset)
+            if bbox_inside_ratio(
+                bbox, scene.W - cfg.edge_pad_px, scene.H - cfg.edge_pad_px,
+            ) < cfg.min_inside_frame:
+                continue
             clipped = clip_bbox(bbox, scene.W, scene.H)
             if clipped is None:
                 continue
