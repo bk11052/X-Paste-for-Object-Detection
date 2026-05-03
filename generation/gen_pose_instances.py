@@ -133,8 +133,24 @@ def main() -> int:
 
     registry = {}
     registry_path = out_root / "poses.json"
+    results_path = out_root / "results.json"  # reseg.py compatibility
     if registry_path.exists():
         registry = json.loads(registry_path.read_text())
+
+    def write_results_json() -> None:
+        # reseg.py expects: [{name, id, clip_scores, ...}] at <input_dir>/results.json
+        items = []
+        for i, p_ in enumerate(poses, start=1):
+            slug_ = p_["slug"]
+            entry_ = registry.get(slug_, {})
+            items.append({
+                "name": slug_,
+                "id": i,
+                "category": p_["category"],
+                "pose_prompt": p_["pose_prompt"],
+                "clip_scores": entry_.get("clip_scores", []),
+            })
+        results_path.write_text(json.dumps(items, indent=2, ensure_ascii=False))
 
     for p in poses:
         slug = p["slug"]
@@ -165,8 +181,11 @@ def main() -> int:
 
         registry[slug] = {**p, "prompt": text, "clip_scores": scores}
         registry_path.write_text(json.dumps(registry, indent=2, ensure_ascii=False))
+        write_results_json()
 
+    write_results_json()  # ensure final state, even if all skipped via --resume
     print(f"\nDone. Registry: {registry_path}")
+    print(f"      reseg.py-compatible: {results_path}")
     print(
         "\nNext: run segmentation on the output directory:\n"
         f"  python segment_methods/reseg.py --input_dir {out_root} --output_dir <seg_out> --seg_method U2Net\n"
