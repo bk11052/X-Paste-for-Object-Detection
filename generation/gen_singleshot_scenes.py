@@ -76,6 +76,8 @@ def main() -> int:
     ap.add_argument("--only", default="", help="comma-separated scenario ids to process")
     ap.add_argument("--n_backgrounds", type=int, default=0,
                     help="override n_backgrounds from scenarios.yaml (0 = use yaml value)")
+    ap.add_argument("--skip_existing", action="store_true",
+                    help="skip images that already exist on disk (resume / scale-up)")
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -117,9 +119,19 @@ def main() -> int:
         idx = 0
         for pi, prompt in enumerate(prompts):
             for k in range(per_prompt):
+                fname = f"{idx:04d}.png"
                 seed = args.seed + sid * 1000 + pi * 100 + k
-                gen = torch.Generator(device=device).manual_seed(seed)
 
+                if args.skip_existing and (out_dir / fname).exists():
+                    meta.append({
+                        "file": fname, "prompt_index": pi, "seed": seed,
+                        "prompt": prompt, "negative_prompt": negative, "skipped_existing": True,
+                    })
+                    idx += 1
+                    print(f"  [{idx}/{actual_total}] {fname}  [skip existing]")
+                    continue
+
+                gen = torch.Generator(device=device).manual_seed(seed)
                 base_kwargs = dict(
                     prompt=prompt, negative_prompt=negative,
                     width=img_w, height=img_h,
@@ -137,7 +149,6 @@ def main() -> int:
                 else:
                     image = base(**base_kwargs).images[0]
 
-                fname = f"{idx:04d}.png"
                 image.save(out_dir / fname)
                 meta.append({
                     "file": fname, "prompt_index": pi, "seed": seed,
