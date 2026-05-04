@@ -1,0 +1,17 @@
+# YOLO dataset config for military 3-class detection
+# Train: synthetic data (our pipeline output, COCO -> YOLO converted)
+# Val:   real images (Roboflow valid split, remapped)
+# Test:  real images (Roboflow test split, remapped)
+#
+# All paths are absolute or relative to this YAML file's location.
+# Adjust path to match your setup.
+
+path: /workspace/XPaste/data/military_yolo
+train: synth/images           # symlinks to output/composed_train_v2/images via coco_to_yolo.py
+val:   real/valid/images
+test:  real/test/images
+
+names:
+  0: tank
+  1: soldier
+  2: military_vehicle
