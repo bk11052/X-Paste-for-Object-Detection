@@ -5,7 +5,7 @@
 #                             (object names should NOT appear here — backgrounds are object-free)
 #   - background_negative: SDXL negative prompt to suppress objects in the background
 #   - instances: list of {category, pose, count, distance_bias}
-#       category: tank | soldier | car
+#       category: tank | soldier | military_vehicle
 #       pose: token used for SD 1.5 instance pool generation prompt (e.g. "walking soldier")
 #       count: number of instances to paste in the final composed image
 #       distance_bias: near | mid | far  (controls which depth band is preferred for paste)
@@ -33,6 +33,7 @@ scenarios:
       - {category: soldier, pose: "walking soldier in tactical gear, full body, side view", count: 1, distance_bias: near}
       # background crowd
       - {category: soldier, pose: "standing soldier in tactical gear", count: 2, distance_bias: far}
+      - {category: military_vehicle, pose: "military humvee three quarter view", count: 1, distance_bias: far}
     n_backgrounds: 16
 
   - id: 2
@@ -58,6 +59,7 @@ scenarios:
       - {category: tank, pose: "main battle tank facing right, side view", count: 1, distance_bias: mid}
       # background crowd
       - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: far}
+      - {category: military_vehicle, pose: "military humvee side view", count: 1, distance_bias: far}
     n_backgrounds: 16
 
   - id: 4
@@ -69,6 +71,7 @@ scenarios:
       - {category: tank, pose: "main battle tank three quarter view from behind", count: 4, distance_bias: mid}
       # background crowd
       - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: far}
+      - {category: military_vehicle, pose: "military cargo truck three quarter view", count: 2, distance_bias: far}
     n_backgrounds: 16
 
   - id: 5
@@ -77,7 +80,12 @@ scenarios:
     background_prompt_seed: "convoy route on rural road, daylight, photorealistic, no vehicles, empty road"
     background_negative: ""
     instances:
-      - {category: car, pose: "military humvee three quarter view", count: 6, distance_bias: mid}
+      - {category: military_vehicle, pose: "military humvee three quarter view", count: 1, distance_bias: mid}
+      - {category: military_vehicle, pose: "military jeep three quarter view", count: 1, distance_bias: mid}
+      - {category: military_vehicle, pose: "armored personnel carrier side view", count: 1, distance_bias: mid}
+      - {category: military_vehicle, pose: "military cargo truck three quarter view", count: 1, distance_bias: mid}
+      - {category: military_vehicle, pose: "military pickup truck side view", count: 1, distance_bias: mid}
+      - {category: military_vehicle, pose: "military humvee side view", count: 1, distance_bias: far}
       # background crowd
       - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: far}
     n_backgrounds: 16

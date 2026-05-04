@@ -36,7 +36,7 @@ from scene_analyzer import CATEGORY_TO_REGIONS, SceneAnalysis
 SCALE_CURVE = {
     "soldier": (180, 12),
     "tank":    (240, 20),  # tank "height" includes hull height; width ~2x
-    "car":     (160, 16),
+    "military_vehicle": (160, 16),
     "plane":   (140, 12),
     "helicopter": (140, 14),
 }
@@ -45,7 +45,7 @@ SCALE_CURVE = {
 ASPECT = {
     "soldier": 0.45,
     "tank":    2.10,
-    "car":     1.80,
+    "military_vehicle": 1.80,
     "plane":   2.20,
     "helicopter": 1.60,
 }

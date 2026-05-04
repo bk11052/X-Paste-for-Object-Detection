@@ -65,7 +65,7 @@ ADE20K_PASTE_REGIONS = {
 CATEGORY_TO_REGIONS = {
     "soldier": ["ground", "road"],
     "tank":    ["ground", "road"],
-    "car":     ["road", "ground"],
+    "military_vehicle": ["road", "ground"],
     "plane":   ["sky"],
     "helicopter": ["sky"],
 }

@@ -46,7 +46,7 @@ from adaptive_paste_planner import (
 from scene_analyzer import SceneAnalyzer
 
 
-CATEGORY_IDS = {"tank": 1, "soldier": 2, "car": 3}
+CATEGORY_IDS = {"tank": 1, "soldier": 2, "military_vehicle": 3}
 
 
 def pil_to_rgba_with_mask(img: Image.Image, white_threshold: int = 240) -> Image.Image:
