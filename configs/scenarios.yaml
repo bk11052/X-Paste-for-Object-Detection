@@ -110,7 +110,7 @@ scenarios:
     background_prompt_seed: "tall grass field at forest edge, photorealistic ground perspective, no people"
     background_negative: ""
     instances:
-      - {category: soldier, pose: "prone soldier in ghillie suit, lying flat on ground", count: 1, distance_bias: mid}
+      - {category: soldier, pose: "prone soldier in ghillie suit, lying flat on ground", count: 1, distance_bias: near}
       # background crowd
       - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: far}
     n_backgrounds: 16

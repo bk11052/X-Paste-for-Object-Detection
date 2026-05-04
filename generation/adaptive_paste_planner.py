@@ -51,9 +51,17 @@ ASPECT = {
 }
 
 DISTANCE_BANDS = {
-    "near": (0.00, 0.45),
-    "mid":  (0.20, 0.80),
-    "far":  (0.65, 1.00),
+    "near": (0.00, 0.40),
+    "mid":  (0.15, 0.55),  # tightened: was (0.20, 0.80) -- mid main objects were too small
+    "far":  (0.55, 1.00),
+}
+
+# Pose keyword -> bbox aspect override (width / height). Used when the asset is
+# fundamentally horizontal (prone, lying) instead of standing.
+POSE_ASPECT_OVERRIDES = {
+    "prone": 2.4,
+    "lying": 2.4,
+    "crawling": 1.8,
 }
 
 
@@ -107,10 +115,20 @@ def scale_from_depth(depth: float, category: str) -> int:
     return int(round(h))
 
 
-def bbox_from_anchor(anchor_xy: tuple[int, int], category: str, height_px: int) -> tuple[int, int, int, int]:
-    """Anchor is the FOOT/bottom-center. Build bbox extending upward by height_px."""
+def aspect_for_spec(category: str, pose: str) -> float:
+    pose_low = pose.lower()
+    for kw, ratio in POSE_ASPECT_OVERRIDES.items():
+        if kw in pose_low:
+            return ratio
+    return ASPECT.get(category, 1.0)
+
+
+def bbox_from_anchor(anchor_xy: tuple[int, int], category: str, height_px: int, aspect: float | None = None) -> tuple[int, int, int, int]:
+    """Anchor is the FOOT/bottom-center. Build bbox extending upward by height_px.
+    `aspect` overrides ASPECT[category] when given (used for prone/lying poses)."""
     cx, cy = anchor_xy
-    w = max(4, int(round(height_px * ASPECT.get(category, 1.0))))
+    a = aspect if aspect is not None else ASPECT.get(category, 1.0)
+    w = max(4, int(round(height_px * a)))
     h = max(4, height_px)
     x1 = cx - w // 2
     y1 = cy - h
@@ -219,7 +237,11 @@ def plan_paste(
 
             d = float(scene.depth_norm[y, x])
             h_px = scale_from_depth(d, spec.category)
-            bbox = bbox_from_anchor((x, y), spec.category, h_px)
+            asp = aspect_for_spec(spec.category, spec.pose)
+            # prone/lying poses occupy more area; reduce "height" so bbox isn't oversized
+            if asp > 1.5:
+                h_px = int(h_px * 0.55)
+            bbox = bbox_from_anchor((x, y), spec.category, h_px, aspect=asp)
             # require enough of the bbox to be inside the frame (after edge_pad inset)
             if bbox_inside_ratio(
                 bbox, scene.W - cfg.edge_pad_px, scene.H - cfg.edge_pad_px,
