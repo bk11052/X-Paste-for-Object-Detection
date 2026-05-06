@@ -34,11 +34,11 @@ from scene_analyzer import CATEGORY_TO_REGIONS, SceneAnalysis
 # Per-category bbox HEIGHT in pixels at near (depth=0) and far (depth=1).
 # Tuned for 1024x576 SDXL backgrounds.
 SCALE_CURVE = {
-    "soldier":          (260, 30),
-    "tank":             (340, 50),
-    "military_vehicle": (300, 45),
-    "plane":            (220, 24),
-    "helicopter":       (220, 28),
+    "soldier":          (320, 30),   # near 56%, far 5.2%
+    "tank":             (420, 60),   # near 73%, far 10.4%
+    "military_vehicle": (420, 50),   # near 73%, far 8.7%
+    "plane":            (260, 24),
+    "helicopter":       (260, 28),
 }
 
 # Aspect ratio (width / height) per category, used to derive bbox width from height.
@@ -51,9 +51,9 @@ ASPECT = {
 }
 
 DISTANCE_BANDS = {
-    "near": (0.00, 0.35),
+    "near": (0.00, 0.25),  # tightened so "near" objects actually appear large
     "mid":  (0.25, 0.60),
-    "far":  (0.50, 0.80),  # upper bound 1.0 -> 0.80 to suppress sub-3% tinies
+    "far":  (0.50, 0.85),  # slight extension to recover some tiny diversity
 }
 
 # Pose keyword -> bbox aspect override (width / height). Used when the asset is
