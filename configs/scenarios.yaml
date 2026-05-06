@@ -32,7 +32,7 @@ scenarios:
     instances:
       - {category: soldier, pose: "walking soldier in tactical gear, full body, side view", count: 1, distance_bias: near}
       - {category: soldier, pose: "standing soldier in tactical gear", count: 2, distance_bias: mid}
-      - {category: military_vehicle, pose: "military humvee three quarter view", count: 1, distance_bias: mid}
+      - {category: military_vehicle, pose: "military humvee three quarter view", count: 1, distance_bias: near}
     n_backgrounds: 16
 
   - id: 2
@@ -56,7 +56,7 @@ scenarios:
       - {category: tank, pose: "main battle tank facing left, side view", count: 1, distance_bias: near}
       - {category: tank, pose: "main battle tank facing right, side view", count: 1, distance_bias: near}
       - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: mid}
-      - {category: military_vehicle, pose: "military humvee side view", count: 1, distance_bias: mid}
+      - {category: military_vehicle, pose: "military humvee side view", count: 1, distance_bias: near}
     n_backgrounds: 16
 
   - id: 4
@@ -65,9 +65,11 @@ scenarios:
     background_prompt_seed: "long straight military road through desert, vanishing point, photorealistic, no vehicles"
     background_negative: ""
     instances:
-      - {category: tank, pose: "main battle tank three quarter view from behind", count: 4, distance_bias: mid}
+      - {category: tank, pose: "main battle tank three quarter view from behind", count: 2, distance_bias: near}
+      - {category: tank, pose: "main battle tank three quarter view from behind", count: 2, distance_bias: mid}
       - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: mid}
-      - {category: military_vehicle, pose: "military cargo truck three quarter view", count: 2, distance_bias: mid}
+      - {category: military_vehicle, pose: "military cargo truck three quarter view", count: 1, distance_bias: near}
+      - {category: military_vehicle, pose: "military cargo truck three quarter view", count: 1, distance_bias: mid}
     n_backgrounds: 16
 
   - id: 5
@@ -78,7 +80,7 @@ scenarios:
     instances:
       - {category: military_vehicle, pose: "military humvee three quarter view", count: 1, distance_bias: near}
       - {category: military_vehicle, pose: "military jeep three quarter view", count: 1, distance_bias: near}
-      - {category: military_vehicle, pose: "armored personnel carrier side view", count: 1, distance_bias: mid}
+      - {category: military_vehicle, pose: "armored personnel carrier side view", count: 1, distance_bias: near}
       - {category: military_vehicle, pose: "military cargo truck three quarter view", count: 1, distance_bias: mid}
       - {category: military_vehicle, pose: "military pickup truck side view", count: 1, distance_bias: mid}
       - {category: military_vehicle, pose: "military humvee side view", count: 1, distance_bias: mid}
@@ -121,8 +123,8 @@ scenarios:
     background_prompt_seed: "vast desert plain with distant horizon, aerial wide shot, photorealistic, no people, empty"
     background_negative: ""
     instances:
-      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 3, distance_bias: far}
-      - {category: soldier, pose: "standing soldier in tactical gear", count: 2, distance_bias: mid}
+      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 4, distance_bias: far}
+      - {category: soldier, pose: "standing soldier in tactical gear", count: 2, distance_bias: far}
     n_backgrounds: 16
 
   - id: 10
@@ -132,6 +134,6 @@ scenarios:
     background_negative: ""
     instances:
       - {category: tank, pose: "main battle tank side view", count: 2, distance_bias: far}
-      - {category: tank, pose: "main battle tank three quarter view from behind", count: 1, distance_bias: mid}
+      - {category: tank, pose: "main battle tank three quarter view from behind", count: 1, distance_bias: near}
       - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: mid}
     n_backgrounds: 16
