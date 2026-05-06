@@ -31,9 +31,8 @@ scenarios:
     background_negative: ""
     instances:
       - {category: soldier, pose: "walking soldier in tactical gear, full body, side view", count: 1, distance_bias: near}
-      # background crowd
-      - {category: soldier, pose: "standing soldier in tactical gear", count: 2, distance_bias: far}
-      - {category: military_vehicle, pose: "military humvee three quarter view", count: 1, distance_bias: far}
+      - {category: soldier, pose: "standing soldier in tactical gear", count: 2, distance_bias: mid}
+      - {category: military_vehicle, pose: "military humvee three quarter view", count: 1, distance_bias: mid}
     n_backgrounds: 16
 
   - id: 2
@@ -45,8 +44,7 @@ scenarios:
       - {category: soldier, pose: "standing soldier in tactical gear",   count: 2, distance_bias: mid}
       - {category: soldier, pose: "kneeling soldier in tactical gear",   count: 2, distance_bias: mid}
       - {category: soldier, pose: "soldier from behind in tactical gear", count: 1, distance_bias: near}
-      # background crowd
-      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: far}
+      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: mid}
     n_backgrounds: 16
 
   - id: 3
@@ -55,11 +53,10 @@ scenarios:
     background_prompt_seed: "wide dusty plain after battle, scorched ground, wide horizon, photorealistic, no vehicles"
     background_negative: ""
     instances:
-      - {category: tank, pose: "main battle tank facing left, side view", count: 1, distance_bias: mid}
-      - {category: tank, pose: "main battle tank facing right, side view", count: 1, distance_bias: mid}
-      # background crowd
-      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: far}
-      - {category: military_vehicle, pose: "military humvee side view", count: 1, distance_bias: far}
+      - {category: tank, pose: "main battle tank facing left, side view", count: 1, distance_bias: near}
+      - {category: tank, pose: "main battle tank facing right, side view", count: 1, distance_bias: near}
+      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: mid}
+      - {category: military_vehicle, pose: "military humvee side view", count: 1, distance_bias: mid}
     n_backgrounds: 16
 
   - id: 4
@@ -69,9 +66,8 @@ scenarios:
     background_negative: ""
     instances:
       - {category: tank, pose: "main battle tank three quarter view from behind", count: 4, distance_bias: mid}
-      # background crowd
-      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: far}
-      - {category: military_vehicle, pose: "military cargo truck three quarter view", count: 2, distance_bias: far}
+      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: mid}
+      - {category: military_vehicle, pose: "military cargo truck three quarter view", count: 2, distance_bias: mid}
     n_backgrounds: 16
 
   - id: 5
@@ -80,14 +76,13 @@ scenarios:
     background_prompt_seed: "convoy route on rural road, daylight, photorealistic, no vehicles, empty road"
     background_negative: ""
     instances:
-      - {category: military_vehicle, pose: "military humvee three quarter view", count: 1, distance_bias: mid}
-      - {category: military_vehicle, pose: "military jeep three quarter view", count: 1, distance_bias: mid}
+      - {category: military_vehicle, pose: "military humvee three quarter view", count: 1, distance_bias: near}
+      - {category: military_vehicle, pose: "military jeep three quarter view", count: 1, distance_bias: near}
       - {category: military_vehicle, pose: "armored personnel carrier side view", count: 1, distance_bias: mid}
       - {category: military_vehicle, pose: "military cargo truck three quarter view", count: 1, distance_bias: mid}
       - {category: military_vehicle, pose: "military pickup truck side view", count: 1, distance_bias: mid}
-      - {category: military_vehicle, pose: "military humvee side view", count: 1, distance_bias: far}
-      # background crowd
-      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: far}
+      - {category: military_vehicle, pose: "military humvee side view", count: 1, distance_bias: mid}
+      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: mid}
     n_backgrounds: 16
 
   - id: 6
@@ -97,8 +92,7 @@ scenarios:
     background_negative: ""
     instances:
       - {category: soldier, pose: "soldier walking at night with night vision goggles, full body", count: 2, distance_bias: near}
-      # background crowd
-      - {category: soldier, pose: "standing soldier in tactical gear", count: 2, distance_bias: far}
+      - {category: soldier, pose: "standing soldier in tactical gear", count: 2, distance_bias: mid}
     n_backgrounds: 16
 
   - id: 7
@@ -107,9 +101,8 @@ scenarios:
     background_prompt_seed: "smoke filled battlefield with debris and dust, photorealistic, no soldiers"
     background_negative: ""
     instances:
-      - {category: soldier, pose: "running soldier in tactical gear, full body, dynamic pose", count: 3, distance_bias: mid}
-      # background crowd
-      - {category: soldier, pose: "running soldier in tactical gear, full body, dynamic pose", count: 2, distance_bias: far}
+      - {category: soldier, pose: "running soldier in tactical gear, full body, dynamic pose", count: 3, distance_bias: near}
+      - {category: soldier, pose: "running soldier in tactical gear, full body, dynamic pose", count: 2, distance_bias: mid}
     n_backgrounds: 16
 
   - id: 8
@@ -119,8 +112,7 @@ scenarios:
     background_negative: ""
     instances:
       - {category: soldier, pose: "prone soldier in ghillie suit, lying flat on ground", count: 1, distance_bias: near}
-      # background crowd
-      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: far}
+      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: mid}
     n_backgrounds: 16
 
   - id: 9
@@ -129,9 +121,8 @@ scenarios:
     background_prompt_seed: "vast desert plain with distant horizon, aerial wide shot, photorealistic, no people, empty"
     background_negative: ""
     instances:
-      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 4, distance_bias: far}
-      # background crowd (already small/far; just adds pose variety)
-      - {category: soldier, pose: "standing soldier in tactical gear", count: 2, distance_bias: far}
+      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 3, distance_bias: far}
+      - {category: soldier, pose: "standing soldier in tactical gear", count: 2, distance_bias: mid}
     n_backgrounds: 16
 
   - id: 10
@@ -141,6 +132,6 @@ scenarios:
     background_negative: ""
     instances:
       - {category: tank, pose: "main battle tank side view", count: 2, distance_bias: far}
-      # background crowd
-      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: far}
+      - {category: tank, pose: "main battle tank three quarter view from behind", count: 1, distance_bias: mid}
+      - {category: soldier, pose: "walking soldier in tactical gear, full body", count: 2, distance_bias: mid}
     n_backgrounds: 16
