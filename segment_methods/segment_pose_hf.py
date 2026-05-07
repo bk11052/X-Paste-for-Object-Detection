@@ -87,11 +87,13 @@ def main() -> int:
     ap.add_argument("--input_dir", required=True, help="output of gen_pose_instances.py")
     ap.add_argument("--output_dir", required=True)
     ap.add_argument("--threshold", type=float, default=0.55, help="sigmoid threshold for binary mask (was 0.40 — bumped to cut halo)")
-    ap.add_argument("--erode_px", type=int, default=4, help="erode mask by N pixels to remove white halo from SD studio backgrounds")
+    ap.add_argument("--erode_px", type=int, default=3, help="erode mask by N pixels to remove white halo from SD studio backgrounds")
     ap.add_argument("--feather_px", type=int, default=2, help="gaussian-blur the alpha channel by this radius for soft edges (0=hard binary)")
+    ap.add_argument("--min_shrink_ratio", type=float, default=0.55,
+                    help="reject if erosion removed > (1 - this) fraction of the mask (likely mostly halo / broken object)")
     ap.add_argument("--min_area", type=float, default=0.02, help="discard if mask covers < this fraction of image")
     ap.add_argument("--max_area", type=float, default=0.95, help="discard if mask covers > this fraction (likely full-image)")
-    ap.add_argument("--min_clip", type=float, default=18.0, help="discard if CLIP score below this (long prompts have lower scores)")
+    ap.add_argument("--min_clip", type=float, default=22.0, help="discard if CLIP score below this (filters broken instances; raised from 18)")
     ap.add_argument("--prompt_for_seg", default="", help="override: text prompt for CLIPSeg (default: use pose_prompt from results.json)")
     ap.add_argument("--use_category_prompt", action="store_true",
                     help="use just the category name (e.g. 'soldier', 'tank') as seg prompt instead of full pose. "
@@ -143,16 +145,21 @@ def main() -> int:
             prob = predict_mask(proc, seg_model, device, img, seg_text)
             mask_bin = (prob > args.threshold).astype(np.uint8)
             mask_bin = largest_cc(mask_bin)
-            if args.erode_px > 0:
+            orig_area = float(mask_bin.sum())
+            if args.erode_px > 0 and orig_area > 0:
                 k = 2 * args.erode_px + 1
                 kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
                 mask_bin = cv2.erode(mask_bin, kernel, iterations=1)
                 mask_bin = largest_cc(mask_bin)
-            area_frac = float(mask_bin.sum()) / max(1, H * W)
+            new_area = float(mask_bin.sum())
+            shrink_ratio = new_area / max(1.0, orig_area)
+            area_frac = new_area / max(1, H * W)
 
             status = "kept"
             if area_frac < args.min_area or area_frac > args.max_area:
                 status = f"area_out_of_range({area_frac:.3f})"
+            elif shrink_ratio < args.min_shrink_ratio:
+                status = f"over_eroded(shrink={shrink_ratio:.2f})"
 
             ys, xs = np.where(mask_bin > 0)
             if len(xs) == 0:
