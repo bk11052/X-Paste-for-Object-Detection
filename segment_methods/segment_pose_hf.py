@@ -86,7 +86,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--input_dir", required=True, help="output of gen_pose_instances.py")
     ap.add_argument("--output_dir", required=True)
-    ap.add_argument("--threshold", type=float, default=0.40, help="sigmoid threshold for binary mask")
+    ap.add_argument("--threshold", type=float, default=0.55, help="sigmoid threshold for binary mask (was 0.40 — bumped to cut halo)")
+    ap.add_argument("--erode_px", type=int, default=4, help="erode mask by N pixels to remove white halo from SD studio backgrounds")
+    ap.add_argument("--feather_px", type=int, default=2, help="gaussian-blur the alpha channel by this radius for soft edges (0=hard binary)")
     ap.add_argument("--min_area", type=float, default=0.02, help="discard if mask covers < this fraction of image")
     ap.add_argument("--max_area", type=float, default=0.95, help="discard if mask covers > this fraction (likely full-image)")
     ap.add_argument("--min_clip", type=float, default=18.0, help="discard if CLIP score below this (long prompts have lower scores)")
@@ -141,6 +143,11 @@ def main() -> int:
             prob = predict_mask(proc, seg_model, device, img, seg_text)
             mask_bin = (prob > args.threshold).astype(np.uint8)
             mask_bin = largest_cc(mask_bin)
+            if args.erode_px > 0:
+                k = 2 * args.erode_px + 1
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+                mask_bin = cv2.erode(mask_bin, kernel, iterations=1)
+                mask_bin = largest_cc(mask_bin)
             area_frac = float(mask_bin.sum()) / max(1, H * W)
 
             status = "kept"
@@ -157,7 +164,11 @@ def main() -> int:
 
             y1, y2 = int(ys.min()), int(ys.max()) + 1
             x1, x2 = int(xs.min()), int(xs.max()) + 1
-            rgba = np.dstack([arr, mask_bin * 255]).astype(np.uint8)
+            alpha = (mask_bin * 255).astype(np.uint8)
+            if args.feather_px > 0:
+                k = 2 * args.feather_px + 1
+                alpha = cv2.GaussianBlur(alpha, (k, k), 0)
+            rgba = np.dstack([arr, alpha]).astype(np.uint8)
             rgba_crop = rgba[y1:y2, x1:x2]
 
             score = clip_score(clip_model, clip_pre, openai_clip, device, rgba_crop, seg_text)

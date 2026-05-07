@@ -4,124 +4,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-X-Paste (ICML 2023) is an instance segmentation framework that extends Copy-Paste augmentation using Stable Diffusion and CLIP. It generates synthetic object instances with high-quality masks, then uses them to train detection models via Copy-Paste augmentation on LVIS/COCO datasets.
+This repo started from **X-Paste (ICML 2023)** but has been repurposed for our paper **"Scenario-aware Copy-Paste Augmentation for Military Object Detection"** (한국군사과학기술학회). We synthesize training images by composing SDXL-generated scenario backgrounds with a pose-rich SD 1.5 instance pool, using depth + segmentation to paste objects in semantically valid locations. Detection target is 3 classes — `tank`, `soldier`, `military_vehicle` — trained with YOLO11 (n/s/m) and RT-DETR.
 
-## Pipeline (5 Steps)
+## Pipeline (7 Stages)
 
-1. **Generate synthetic images** — `generation/text2im.py` uses Stable Diffusion to produce foreground objects from LVIS category names
-2. **Segment foreground** — `segment_methods/reseg.py` extracts masks using one of 4 methods (CLIPSeg, UFO, U2Net, SelfReformer)
-3. **Build instance pool** — `segment_methods/clean_pool.py` filters by CLIP score and mask area, outputs `LVIS_instance_pools.json`
-4. **Train model** — `train_net.py` trains Cascade RCNN with Copy-Paste augmentation from the instance pool
-5. **Inference** — `demo.py` runs trained model on images
+```mermaid
+flowchart TD
+    S1["Stage 1 · Scenario Specification<br/><b>configs/scenarios.yaml</b><br/>10 edge-case scenarios<br/>background seed + instance spec (category, pose, count, distance_bias)"]
+    S2["Stage 2 · LLM Background Prompt Expansion<br/><b>gen_scenario_prompts.py</b><br/>GPT-4: seed → 4 detailed SDXL prompts<br/>banned-word check (people / vehicles)"]
+    S3["Stage 3 · SDXL Background + Quality Control<br/><b>gen_singleshot_scenes.py + filter_backgrounds.py</b><br/>1024×576, 16–32 imgs/scenario<br/>DETR leak filter (cars / persons / trains)"]
+    S4["Stage 4 · Pose-aware Instance Pool<br/><b>gen_pose_instances.py + segment_pose_hf.py</b><br/>SD 1.5, 100 imgs × 13 poses<br/>HF CLIPSeg + CLIP score → RGBA crop"]
+    S5["Stage 5 · Scene Understanding<br/><b>scene_analyzer.py</b><br/>DepthAnything-V2 (depth)<br/>SegFormer ADE20K (region: ground / road / sky / building / water)"]
+    S6["Stage 6 · Adaptive Paste Planner ★ Core Novelty<br/><b>adaptive_paste_planner.py</b><br/>region–category matching · distance band (near/mid/far)<br/>per-category log-scale curve · pose-aware aspect override<br/>frame containment ≥ 92% · center-distance overlap reject"]
+    S7["Stage 7 · Composition + Annotation<br/><b>compose_scene.py</b><br/>alpha blending paste<br/>COCO JSON output"]
 
-## Commands
-
-```bash
-# Generate synthetic images (Step 1)
-cd generation && python text2im.py --model diffusers --samples 100 --category_file <lvis_train.json> --output_dir <output>
-
-# Segment (Step 2) — run per method: clipseg, UFO, U2Net, selfreformer
-cd segment_methods && python reseg.py --input_dir <gen_dir> --output_dir <seg_dir> --seg_method U2Net --samples 100
-
-# Filter and create pool (Step 3)
-cd segment_methods && python clean_pool.py --input_dir <seg_dir> --image_dir <gen_dir> --output_file <pool.json> --min_clip 21 --min_area 0.05 --max_area 0.95
-
-# Train (Step 4) — set DETECTRON2_DATASETS and edit INST_POOL_PATH in config
-export DETECTRON2_DATASETS=/path/to/datasets
-bash launch.sh --config-file configs/Xpaste_R50.yaml
-
-# Override config params via command line
-bash launch.sh --config-file configs/Xpaste_R50.yaml SOLVER.MAX_ITER 1000 SOLVER.IMS_PER_BATCH 8
-
-# Inference (Step 5)
-python demo.py --config-file configs/Xpaste_R50.yaml --input image.jpg --output out.jpg --opts MODEL.WEIGHTS <checkpoint.pth>
-
-# Convert pretrained backbone weights to Detectron2 format
-python tools/convert-thirdparty-pretrained-model-to-d2.py --path <model.pth>
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
 ```
 
-## Architecture
+Generated dataset (latest run): `output/composed_train_v2/{images,annotations.json,visualizations}`.
 
-### Config Inheritance
-```
-configs/Base-C2_L_R5021k_640b64_4x.yaml    # Base: CustomRCNN + CenterNet + DeticCascadeROIHeads
-├── configs/Xpaste_R50.yaml                  # ResNet50 + instance pool (batch 64, 640px)
-├── configs/Xpaste_swinL.yaml                # Swin-L + instance pool (batch 16, 896px)
-├── configs/Xpaste_copypaste_R50.yaml        # ResNet50 + self copy-paste
-└── configs/Xpaste_copypaste_swinL.yaml      # Swin-L + self copy-paste
-```
+## Contributions
 
-Key X-Paste config params (defined in `xpaste/config.py`):
-- `INPUT.INST_POOL` / `INPUT.INST_POOL_PATH` — enable and point to instance pool JSON
-- `INPUT.USE_COPY_METHOD` — `'syn_copy'` (from pool) or `'self_copy'` (from dataset)
-- `INPUT.CP_METHOD` — blending: `['basic']`, `['alpha']`, `['gaussian']`, `['poisson']`
-- `INPUT.INST_POOL_FORMAT` — `'RGBA'` (with alpha channel for masking)
-- `SOLVER.MODEL_EMA` — EMA decay rate (0.999 typical, 0 to disable)
+1. **Scenario-aware Background Generation (LLM 도입)** — LLM이 군사 시나리오 맥락에 맞춘 배경을 자동 생성. 단순 도시/자연 배경(X-Paste)이 아니라 전투 거리, 사막 대치, 야간 작전, 연막 전장 등 시나리오 의미가 살아있는 배경.
+2. **Scene-aware Adaptive Copy-Paste** — Random paste(X-Paste)를 depth + semantic segmentation 기반 의미적 paste로 교체. 객체 카테고리에 맞는 region(soldier→ground, car→road)과 depth에 비례한 크기로 자동 배치.
+3. **Pose-rich Instance Pool** — 시나리오에서 자세를 자동 추출 → 자세별 SD 생성. X-Paste의 "a photo of a single soldier" 단일 자세 대비 walking / standing / kneeling / running / prone / from-behind / facing-left / facing-right 등 풍부.
+4. **Quality Control via Pretrained Detector** — SDXL 배경 leak 문제를 사전 학습 detector(DETR)로 자동 검출·제거. unlabeled-object → false-negative 학습 신호 차단.
+5. **Edge-case Stress Test 시나리오** — 공간 / 규모 / 가시성 축으로 10개 challenging case 정의 (마주보는 탱크, 멀리 보이는 순찰대, 위장 군인 등).
 
-### Model Architecture (train_net.py → xpaste/modeling/)
-- **Meta-architecture**: `CustomRCNN` (`xpaste/modeling/meta_arch/custom_rcnn.py`) — extends Detectron2 GeneralizedRCNN with image label co-training
-- **Proposal generator**: CenterNet2 (`third_party/CenterNet2/`)
-- **ROI heads**: `DeticCascadeROIHeads` (`xpaste/modeling/roi_heads/detic_roi_heads.py`) — 3-stage cascade [0.6, 0.7, 0.8 IoU]
-- **Backbones**: TIMM ResNet (`xpaste/modeling/backbone/timm.py`) or Swin Transformer (`xpaste/modeling/backbone/swintransformer.py`)
-- **Zero-shot classifier**: CLIP-based (`xpaste/modeling/roi_heads/zero_shot_classifier.py`)
-
-### Data Pipeline (xpaste/data/)
-Training data flows through: `DatasetMapper` → `CopyPasteMapper` (wraps mapper, applies augmentation)
-
-- `custom_build_copypaste_mapper.py` — loads instance pool, samples instances, applies copy-paste per batch
-- `transforms/custom_copypaste.py` — core Copy-Paste algorithm (paste, blend, update masks, filter occluded)
-- `transforms/custom_cp_method.py` — four blending methods: basic, alpha, gaussian, poisson
-- `transforms/custom_augmentation_impl.py` — `EfficientDetResizeCrop` augmentation
-
-### Instance Pool Format
-The pool JSON maps category IDs to lists of RGBA image paths:
-```json
-{"0": ["*path/to/images/0/0.png", "*path/to/images/0/1.png"], "1": [...]}
-```
-
-## Key Dependencies
-- **Detectron2** — core detection framework
-- **CenterNet2** — proposal generator (in `third_party/`)
-- **CLIP** (OpenAI) — zero-shot classification + semantic filtering
-- **diffusers** — Stable Diffusion text-to-image
-- **timm==0.4.9** — backbone model loading
-
-## Dataset Layout
-```
-$DETECTRON2_DATASETS/
-├── coco/
-│   ├── train2017/
-│   └── annotations/instances_train2017.json
-└── lvis/
-    ├── lvis_v1_train.json
-    └── lvis_v1_val.json
-```
-LVIS images are shared with COCO (symlink `coco/train2017`).
-
-Pre-computed metadata in `datasets/metadata/`: CLIP embeddings (`lvis_v1_clip_a+cname.npy`), category info (`lvis_v1_train_cat_info.json`).
-
-## 논문 계획 — 한국군사과학기술학회
-
-### 논문 개요 (2026-05-03 방향 전환)
-
-**Scenario-aware Copy-Paste Augmentation** — LLM이 생성한 시나리오 맥락 배경(SDXL single-shot) + 시나리오별 자세 인스턴스 풀(SD 1.5) + scene-aware paste(depth/segmentation 기반 위치/크기 자동 결정).
-
-기존 X-Paste(랜덤 paste, 일반 배경)와 달리:
-- 배경은 시나리오 맥락 반영 (전장 거리, 사막의 대치, 야간 작전 등)
-- 인스턴스는 시나리오 자세 (걷는, 사격, 마주보는 등)
-- Paste는 scene-aware (DepthAnything-V2 + SegFormer ADE20K)
-
-리뷰어 대응 narrative:
-- "왜 single-shot 안 함?" → SDXL single-shot은 소형 객체와 자세 제어가 약함을 정량 입증, 우리가 보완.
-- "왜 X-Paste랑 다름?" → ① 시나리오 배경, ② 시나리오 자세 인스턴스, ③ scene-aware paste.
-
-### Contributions
-1. **시나리오 맥락 배경 풀** — GPT가 시나리오 프롬프트 생성 → SDXL이 객체 없는 맥락 배경을 single-shot 생성
-2. **시나리오 자세 인스턴스 풀** — 기존 SD 1.5 인스턴스 풀 확장, 자세별(walking/kneeling/facing 등) prompt template 사용
-3. **Scene-aware paste** — DepthAnything-V2 depth로 거리, SegFormer ADE20K로 가능 영역(ground/road/sky) 식별, depth 기반 자동 scale 산출. 소형 객체는 depth가 큰(먼) 영역에 자동 paste되어 자연 축소
-4. **군사 객체 탐지 벤치마크** — DOTA + Open Images + Roboflow 통합 표준 testset
-
-### 시나리오 카테고리 (10개 엣지 케이스)
+## 시나리오 카테고리 (10개)
 
 | # | 시나리오 | 인스턴스 자세 | 도전 |
 |---|---------|--------------|------|
@@ -136,10 +46,10 @@ Pre-computed metadata in `datasets/metadata/`: CLIP embeddings (`lvis_v1_clip_a+
 | 9 | 멀리 보이는 순찰대 | walking_soldier × 4 (소형) | 소형 객체 |
 | 10 | 지평선의 탱크 | tank × 2 (소형) | 소형 객체 |
 
-### 실험 설계 (6개 × 3 모델 = 18 runs)
+## 실험 설계 (6 exps × 3 models = 18 runs)
 
-**카테고리**: tank, soldier, car
-**모델**: YOLOv8, YOLOv11, RT-DETR
+**카테고리**: tank · soldier · military_vehicle
+**모델**: YOLOv8 · YOLO11 (n/s/m) · RT-DETR
 **평가**: mAP + AP_small/medium/large + 카테고리별 AP
 
 | Exp | Train | 평가 |
@@ -153,28 +63,77 @@ Pre-computed metadata in `datasets/metadata/`: CLIP embeddings (`lvis_v1_clip_a+
 
 핵심 비교: Exp-2 vs Exp-5 (scene-aware 효과), Exp-3 vs Exp-5 (single-shot vs 우리), Exp-4 vs Exp-5 (paste 방식 ablation), Exp-6 vs Exp-1 (보강 효과).
 
-### 새 파이프라인 (Phase 1 — 신규 스크립트)
+## Dataset Layout
+
+```
+data/
+├── roboflow_soldier_raw/soldier.v1i.yolov11/{train,valid,test}/{images,labels}   # raw Roboflow (12 class)
+└── military_yolo/
+    ├── real/{train,valid,test}/{images,labels}    # remapped to 3-class (tools/remap_roboflow_labels.py)
+    └── synth/{train,val}/{images,labels}          # synthesized via 7-stage pipeline
+output/composed_train_v2/                          # 가장 최근 합성 출력 (COCO JSON + images + viz)
+```
+
+YOLO data config: `configs/military.yaml`
+```yaml
+path: /workspace/XPaste/data/military_yolo
+train: synth/train/images
+val:   synth/val/images
+test:  real/test/images
+names: { 0: tank, 1: soldier, 2: military_vehicle }
+```
+
+## 신규 파이프라인 스크립트 (요약)
 
 | 파일 | 역할 |
 |------|------|
-| `configs/scenarios.yaml` | 10개 시나리오 정의 (배경 프롬프트 슬롯 + 인스턴스 자세 spec) |
-| `generation/gen_scenario_prompts.py` | GPT-4 API로 시나리오 배경 프롬프트 확장 + 캐시 |
-| `generation/gen_singleshot_scenes.py` | SDXL `StableDiffusionXLPipeline`로 배경 생성 |
-| `generation/gen_pose_instances.py` | SD 1.5 + 자세별 prompt_template으로 인스턴스 생성 (`text2im.py` 확장) |
-| `generation/scene_analyzer.py` | DepthAnything-V2 + SegFormer ADE20K wrapper |
-| `generation/adaptive_paste_planner.py` | depth/seg 기반 paste 위치/크기 결정 알고리즘 |
+| `configs/scenarios.yaml` | 10개 시나리오 정의 |
+| `generation/gen_scenario_prompts.py` | GPT-4로 SDXL 배경 프롬프트 확장 + 캐시 |
+| `generation/gen_singleshot_scenes.py` | SDXL 1024×576 배경 생성 |
+| `generation/filter_backgrounds.py` | DETR로 leak 객체 자동 검출·제거 |
+| `generation/gen_pose_instances.py` | SD 1.5 자세별 인스턴스 생성 |
+| `generation/segment_pose_hf.py` | HF CLIPSeg + CLIP 필터 + RGBA crop |
+| `generation/scene_analyzer.py` | DepthAnything-V2 + SegFormer ADE20K |
+| `generation/adaptive_paste_planner.py` | depth/seg 기반 paste 위치·크기 결정 |
 | `generation/compose_scene.py` | 통합 파이프라인 + COCO JSON 출력 |
+| `tools/remap_roboflow_labels.py` | Roboflow 12-class → 우리 3-class YOLO |
+| `tools/coco_to_yolo.py` | COCO JSON → YOLO txt 변환 |
 
-### 재사용 자산 (기존)
-- `generation/text2im.py` — `--prompt_template`, `--image_size` 지원 (자세별 인스턴스 생성에 활용)
-- `generation/military_categories.json` — tank, soldier, car
-- `segment_methods/reseg.py` + `clean_pool.py` — 인스턴스 세그멘테이션/필터링 (자세 인스턴스에 그대로 적용)
-- `xpaste/data/transforms/custom_cp_method.py` — alpha/poisson blending
-- `segment_methods/gen_bbox_labels.py` — bbox 라벨 추출 참고
+## Commands
 
-### Plan 파일
+```bash
+# Generate scenario backgrounds + instance pool + composed dataset (Stages 2-7)
+python generation/gen_scenario_prompts.py    --scenarios configs/scenarios.yaml
+python generation/gen_singleshot_scenes.py   --scenarios configs/scenarios.yaml --out output/bg
+python generation/filter_backgrounds.py      --in output/bg --out output/bg_clean
+python generation/gen_pose_instances.py      --out output/instances
+python generation/segment_pose_hf.py         --in output/instances --out output/instances_rgba
+python generation/compose_scene.py           --bg output/bg_clean --inst output/instances_rgba \
+                                             --out output/composed_train_v2
+
+# Convert composed COCO JSON → YOLO format for training
+python tools/coco_to_yolo.py --coco output/composed_train_v2/annotations.json \
+                              --images output/composed_train_v2/images \
+                              --out data/military_yolo/synth
+
+# Remap Roboflow real test set to our 3 classes
+python tools/remap_roboflow_labels.py \
+  --input_root data/roboflow_soldier_raw/soldier.v1i.yolov11 \
+  --output_root data/military_yolo/real
+
+# Train YOLO11 (n / s / m) — needs ultralytics installed
+pip install ultralytics
+yolo detect train data=configs/military.yaml model=yolo11n.pt epochs=100 imgsz=640 project=runs/military name=yolo11n
+yolo detect train data=configs/military.yaml model=yolo11s.pt epochs=100 imgsz=640 project=runs/military name=yolo11s
+yolo detect train data=configs/military.yaml model=yolo11m.pt epochs=100 imgsz=640 project=runs/military name=yolo11m
+```
+
+## Reused from Original X-Paste
+
+- `generation/text2im.py` — SD 1.5 text-to-image base (자세별 인스턴스 생성에서 `--prompt_template` 활용)
+- `segment_methods/reseg.py` + `clean_pool.py` — 인스턴스 마스크 생성 / 필터링
+- `xpaste/data/transforms/custom_cp_method.py` — alpha / poisson blending (compose_scene에서 호출)
+
+## Plan File
+
 세부 단계 및 알고리즘은 `/Users/kyu216/.claude/plans/rosy-splashing-whistle.md` 참조.
-
-### 군사 카테고리 LVIS 매핑 (참고)
-- army_tank (id=1058, rare), fighter_jet (id=436), gun (id=523), helicopter (id=555), rifle (id=884)
-- soldier는 LVIS에 없음 → 커스텀 카테고리
