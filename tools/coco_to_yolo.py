@@ -61,15 +61,33 @@ def main() -> int:
     for ann in coco["annotations"]:
         by_image.setdefault(ann["image_id"], []).append(ann)
 
-    # train/val split
-    image_ids = sorted(img_meta.keys())
+    # scene-level train/val split:
+    # group images by background scene (file_name format "<scenario>/<bg_idx>__<var_idx>.jpg"
+    # -> scene_id = "<scenario>/<bg_idx>"). Keeps all paste variations of one background
+    # in the same split, preventing background leakage between train and val.
+    def _scene_id(file_name: str) -> str:
+        rel = file_name.replace("\\", "/")
+        stem, _, _ = rel.rpartition(".")
+        if "__" in stem:
+            scene, _, _ = stem.rpartition("__")
+            return scene
+        return stem  # fallback: each image is its own scene
+
+    scene_to_imgs: dict[str, list[int]] = {}
+    for img_id, img in img_meta.items():
+        scene_to_imgs.setdefault(_scene_id(img["file_name"]), []).append(img_id)
+
+    scene_ids = sorted(scene_to_imgs.keys())
     rng = random.Random(args.seed)
-    rng.shuffle(image_ids)
-    n_total = len(image_ids)
-    n_val = int(round(n_total * args.val_ratio))
-    val_ids = set(image_ids[:n_val])
-    train_ids = set(image_ids[n_val:])
-    print(f"\nSplit: train={len(train_ids)}  val={len(val_ids)}  total={n_total}  (val_ratio={args.val_ratio})")
+    rng.shuffle(scene_ids)
+    n_scenes = len(scene_ids)
+    n_val_scenes = int(round(n_scenes * args.val_ratio))
+    val_scenes = set(scene_ids[:n_val_scenes])
+    val_ids = {i for s in val_scenes for i in scene_to_imgs[s]}
+    train_ids = {i for s in scene_ids[n_val_scenes:] for i in scene_to_imgs[s]}
+    n_total = len(img_meta)
+    print(f"\nScene-level split: scenes train={n_scenes - n_val_scenes} val={n_val_scenes}  "
+          f"images train={len(train_ids)} val={len(val_ids)}  total={n_total}  (val_ratio={args.val_ratio})")
 
     out_root = Path(args.out_root)
     images_root_in = Path(args.images_root)
