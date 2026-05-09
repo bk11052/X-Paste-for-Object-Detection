@@ -44,6 +44,24 @@ def slugify(s: str) -> str:
 def collect_poses(scenarios_yaml: Path) -> list[dict]:
     cfg = yaml.safe_load(scenarios_yaml.read_text())
     seen: dict[str, dict] = {}
+
+    # Format A (legacy): {scenarios: [{id, instances: [{category, pose}, ...]}, ...]}
+    # Format B (4-class):  {poses: [{category, pose}, ...]}
+    if "poses" in cfg:
+        for inst in cfg["poses"]:
+            cat = inst["category"]
+            pose = inst["pose"].strip()
+            slug = f"{cat}__{slugify(pose)}"
+            if slug in seen:
+                continue
+            seen[slug] = {
+                "slug": slug,
+                "category": cat,
+                "pose_prompt": pose,
+                "scenario_ids": [],
+            }
+        return list(seen.values())
+
     for s in cfg["scenarios"]:
         for inst in s.get("instances", []):
             cat = inst["category"]
@@ -57,8 +75,6 @@ def collect_poses(scenarios_yaml: Path) -> list[dict]:
                 "pose_prompt": pose,
                 "scenario_ids": [s["id"]],
             }
-        # also track which scenarios use each pose
-    # second pass for scenario_ids
     cfg2 = yaml.safe_load(scenarios_yaml.read_text())
     for entry in seen.values():
         entry["scenario_ids"] = []
