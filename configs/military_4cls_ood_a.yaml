@@ -1,0 +1,14 @@
+# OOD-A eval config: military source from yolo-datasets-ymdve.
+# Built by tools/build_ood_military.py into data/military_v1/ood_a/.
+# Used by tools/eval_on_ood.sh; only the val: split is read by `yolo val`.
+
+path: /workspace/XPaste/data/military_v1
+train: ood_a/images        # placeholder (yolo val ignores it)
+val:   ood_a/images
+test:  ood_a/images
+
+names:
+  0: Soldier
+  1: civilian_vehicle
+  2: military_vehicle
+  3: persons

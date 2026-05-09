@@ -82,6 +82,12 @@ names: { 0: Soldier, 1: civilian_vehicle, 2: military_vehicle, 3: persons }
 | `tools/scene_disjoint_split.py` | raw Roboflow → scene-disjoint split | NEW |
 | `tools/filter_pool_by_clip_margin.py` | R1 mitigation 풀 필터 | NEW |
 | `tools/run_yolo_matrix.sh` | 실험 행렬 드라이버 | NEW |
+| `tools/build_ood_military.py` | Roboflow military source → ood_a/ (flexible class remap) | NEW |
+| `tools/build_coco_civilian_ood.py` | COCO val2017 subset → ood_b/ (persons + civilian_vehicle) | NEW |
+| `tools/eval_on_ood.sh` | trained model × OOD-{a,b} `yolo val` 드라이버 | NEW |
+| `configs/ood_military_mapping.yaml` | OOD-A 클래스 id 매핑 | NEW |
+| `configs/military_4cls_ood_a.yaml` | OOD-A YOLO eval config | NEW |
+| `configs/military_4cls_ood_b.yaml` | OOD-B YOLO eval config | NEW |
 | `xpaste/aug/__init__.py` | aug 패키지 (CLASSES) | NEW |
 | `xpaste/aug/distribution.py` | joint hist + inverse-freq sampler | NEW |
 | `xpaste/aug/host_scene.py` | host SegFormer + accept/reject | NEW |
@@ -250,28 +256,83 @@ DEVICE=3 EXPS=E MODELS="yolo11n yolo11s yolo11m" SEEDS="0 1 2" \
 wait
 ```
 
-### Phase 5 — 결과 집계
+### Phase 4.5 — OOD test 빌드 (Phase 4 도는 동안 병렬)
+```bash
+# OOD-A (military, Roboflow yolo-datasets-ymdve)
+mkdir -p data/military_v1/ood_a_raw && cd data/military_v1/ood_a_raw
+# Roboflow Universe → Download Dataset → YOLOv8 → curl 복사 (사용자 직접)
+# 압축 해제 후 cd /workspace/XPaste
+python tools/build_ood_military.py \
+  --source_root data/military_v1/ood_a_raw \
+  --mapping_yaml configs/ood_military_mapping.yaml \
+  --output_root data/military_v1/ood_a
+
+# OOD-B (civilian, COCO val2017 subset)
+mkdir -p data/coco && cd data/coco
+[ -d val2017 ]     || (wget http://images.cocodataset.org/zips/val2017.zip && unzip val2017.zip)
+[ -d annotations ] || (wget http://images.cocodataset.org/annotations/annotations_trainval2017.zip && unzip annotations_trainval2017.zip)
+cd /workspace/XPaste
+python tools/build_coco_civilian_ood.py \
+  --coco_imgs data/coco/val2017 \
+  --coco_ann  data/coco/annotations/instances_val2017.json \
+  --output_root data/military_v1/ood_b \
+  --max_images 500 --seed 0
+```
+
+### Phase 4.6 — OOD eval (Phase 4 train 끝난 뒤)
+```bash
+# 전체를 1 GPU에서 순차 (~3h):
+DEVICE=0 RUNS="$RUNS" bash tools/eval_on_ood.sh > logs/ood_eval.log 2>&1 &
+
+# 또는 4 GPU 분산 (각 EXP별로):
+for i in 0 1 2 3; do
+  EXP=$(echo "B C D E" | cut -d' ' -f$((i+1)))
+  DEVICE=$i EXPS="$EXP" RUNS="$RUNS" \
+    nohup bash tools/eval_on_ood.sh > "logs/ood_${EXP}.log" 2>&1 &
+done
+DEVICE=0 EXPS=A RUNS="$RUNS" nohup bash tools/eval_on_ood.sh > logs/ood_A.log 2>&1 &
+wait
+```
+
+### Phase 5 — 결과 집계 (in-distribution + OOD-A + OOD-B)
 ```bash
 python - <<'PY'
 import pandas as pd, glob, os, re
-rows = []
-for d in sorted(glob.glob(os.environ['RUNS'] + '/[A-E]_yolo11*_s*')):
-    name = os.path.basename(d)
-    csv = os.path.join(d, 'results.csv')
-    if not os.path.exists(csv): continue
-    df = pd.read_csv(csv)
-    last = df.iloc[-1]
-    m = re.match(r'(\w)_yolo11(\w)_s(\d)', name)
-    rows.append(dict(exp=m.group(1), model='yolo11'+m.group(2), seed=int(m.group(3)),
-                     mAP50=last.get('metrics/mAP50(B)', float('nan')),
-                     mAP=last.get('metrics/mAP50-95(B)', float('nan'))))
-out = pd.DataFrame(rows)
-print(out.groupby(['exp','model'])['mAP50'].agg(['mean','std']).unstack().round(3))
-out.to_csv('runs/military_v1/summary.csv', index=False)
+RUNS = os.environ['RUNS']
+PAT = re.compile(r'(\w)_yolo11(\w)_s(\d)')
+
+def collect(root, label):
+    rows = []
+    for d in sorted(glob.glob(os.path.join(root, '[A-E]_yolo11*_s*'))):
+        name = os.path.basename(d)
+        csv = os.path.join(d, 'results.csv')
+        if not os.path.exists(csv): continue
+        df = pd.read_csv(csv)
+        last = df.iloc[-1]
+        m = PAT.match(name)
+        if not m: continue
+        rows.append(dict(
+            split=label, exp=m.group(1), model='yolo11'+m.group(2), seed=int(m.group(3)),
+            mAP50=last.get('metrics/mAP50(B)', float('nan')),
+            mAP=last.get('metrics/mAP50-95(B)', float('nan')),
+        ))
+    return rows
+
+all_rows = []
+all_rows += collect(RUNS, 'in_dist')
+all_rows += collect(os.path.join(RUNS, 'ood_a'), 'ood_a')
+all_rows += collect(os.path.join(RUNS, 'ood_b'), 'ood_b')
+
+out = pd.DataFrame(all_rows)
+print(out.groupby(['split','exp','model'])['mAP50'].agg(['mean','std']).unstack().round(3))
+out.to_csv(os.path.join(RUNS, 'summary.csv'), index=False)
 PY
 ```
 
-핵심 비교: A vs E (+2.0 mAP50 이상이면 paper-worthy), D vs E (+0.8 이상이면 inverse-freq + style match novelty 정당).
+핵심 비교:
+- **in-dist** A vs E (+2.0 mAP50 이상이면 paper-worthy), D vs E (+0.8 이상이면 inverse-freq + style-match novelty 정당)
+- **OOD-A** (Soldier + military_vehicle): E의 절대값보다 E vs A 상대 게인이 핵심. small-object generalization 증거.
+- **OOD-B** (civilian_vehicle + persons): COCO 도메인 격차 큼. 모든 모델 낮을 수 있음, 상대 비교 위주.
 
 ## Reused from Original X-Paste
 

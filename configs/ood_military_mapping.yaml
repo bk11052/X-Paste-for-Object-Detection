@@ -1,0 +1,11 @@
+# Class id remap from yolo-datasets-ymdve/military-object-detection-uxkcn
+# (https://universe.roboflow.com/yolo-datasets-ymdve/military-object-detection-uxkcn)
+# Source classes: 0=military vehicle, 1=soldier, 2=tank
+# Our 4-class:    0=Soldier, 1=civilian_vehicle, 2=military_vehicle, 3=persons
+#
+# civilian_vehicle (1) and persons (3) are not represented in this OOD source —
+# they are covered by OOD-B (COCO subset) instead.
+mapping:
+  0: 2   # military vehicle -> military_vehicle
+  1: 0   # soldier          -> Soldier
+  2: 2   # tank             -> military_vehicle (merged)

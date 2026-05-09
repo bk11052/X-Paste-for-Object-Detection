@@ -1,0 +1,14 @@
+# OOD-B eval config: civilian source from COCO val2017 subset.
+# Built by tools/build_coco_civilian_ood.py into data/military_v1/ood_b/.
+# Used by tools/eval_on_ood.sh; only the val: split is read by `yolo val`.
+
+path: /workspace/XPaste/data/military_v1
+train: ood_b/images        # placeholder (yolo val ignores it)
+val:   ood_b/images
+test:  ood_b/images
+
+names:
+  0: Soldier
+  1: civilian_vehicle
+  2: military_vehicle
+  3: persons
