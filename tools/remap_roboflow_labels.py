@@ -1,30 +1,34 @@
 """
-Remap Roboflow 12-class soldier dataset labels to our 3-class YOLO scheme.
+Remap Roboflow military dataset labels to one of our YOLO schemes.
 
-Source classes (Roboflow):
-  0:'-', 1:'armored_car', 2:'battery', 3:'gun_barrel', 4:'gunship',
-  5:'passerby', 6:'shelter_car', 7:'soldier', 8:'tank', 9:'tent',
-  10:'track', 11:'uav'
+Two schemes are supported via --scheme:
 
-Our classes (3-class YOLO):
-  0:'tank', 1:'soldier', 2:'military_vehicle'
+  three_class  (legacy "soldier.v1i.yolov11" 12-class -> 3-class):
+    Source: 0:'-', 1:'armored_car', 2:'battery', 3:'gun_barrel', 4:'gunship',
+            5:'passerby', 6:'shelter_car', 7:'soldier', 8:'tank', 9:'tent',
+            10:'track', 11:'uav'
+    Output: 0:'tank', 1:'soldier', 2:'military_vehicle'
+    Mapping: 8->0, 7->1, 1->2, 6->2, others dropped.
 
-Mapping:
-  8 (tank)         -> 0 (tank)
-  7 (soldier)      -> 1 (soldier)
-  1 (armored_car)  -> 2 (military_vehicle)
-  6 (shelter_car)  -> 2 (military_vehicle)
-  others           -> dropped
+  four_class  (new "Custom Object Detection -Military- v1" 4-class -> identity):
+    Source = Output: 0:'Soldier', 1:'civilian_vehicle', 2:'military_vehicle', 3:'persons'
+    Mapping: identity (no class id changes). The script just standardizes the
+    directory layout under output_root and links images.
 
-For each source split (train/valid/test), we write filtered labels and symlink the
+For each source split (train/valid/test), we write labels and symlink (or copy)
 matching images. Images that have no relevant labels remain (as background-only
 samples) -- useful for measuring false positives.
 
 Usage:
-  python tools/remap_roboflow_labels.py \
-      --input_root /path/to/soldier.v1i.yolov11 \
-      --output_root data/military_yolo/real \
-      [--copy]                # default symlinks; use --copy for actual file copy
+  # 3-class legacy
+  python tools/remap_roboflow_labels.py --scheme three_class \\
+      --input_root /path/to/soldier.v1i.yolov11 \\
+      --output_root data/military_yolo/real
+
+  # 4-class new (identity)
+  python tools/remap_roboflow_labels.py --scheme four_class \\
+      --input_root /path/to/Custom_Object_Detection_Military_v1 \\
+      --output_root data/military_v1/real
 """
 from __future__ import annotations
 
@@ -36,12 +40,15 @@ from pathlib import Path
 
 
 # Map: roboflow class id -> our class id (or None to drop)
-ROBOFLOW_TO_OURS = {
+ROBOFLOW_TO_OURS_3CLS = {
     8: 0,   # tank
     7: 1,   # soldier
     1: 2,   # armored_car -> military_vehicle
     6: 2,   # shelter_car -> military_vehicle
 }
+
+# Identity mapping for the new 4-class dataset.
+ROBOFLOW_TO_OURS_4CLS = {0: 0, 1: 1, 2: 2, 3: 3}
 
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".bmp")
 
@@ -63,7 +70,7 @@ def link_or_copy(src: Path, dst: Path, copy: bool) -> None:
         os.symlink(src.absolute(), dst)
 
 
-def process_split(in_root: Path, out_root: Path, split: str, copy: bool) -> dict:
+def process_split(in_root: Path, out_root: Path, split: str, copy: bool, mapping: dict, n_classes: int) -> dict:
     in_labels = in_root / split / "labels"
     in_images = in_root / split / "images"
     if not in_labels.exists() or not in_images.exists():
@@ -77,7 +84,7 @@ def process_split(in_root: Path, out_root: Path, split: str, copy: bool) -> dict
     processed = 0
     kept_with_labels = 0
     kept_empty = 0
-    class_counts = {0: 0, 1: 0, 2: 0}
+    class_counts = {i: 0 for i in range(n_classes)}
 
     for txt_file in sorted(in_labels.glob("*.txt")):
         new_lines = []
@@ -86,7 +93,7 @@ def process_split(in_root: Path, out_root: Path, split: str, copy: bool) -> dict
             if not parts:
                 continue
             old_cls = int(parts[0])
-            new_cls = ROBOFLOW_TO_OURS.get(old_cls)
+            new_cls = mapping.get(old_cls)
             if new_cls is None:
                 continue
             new_lines.append(f"{new_cls} " + " ".join(parts[1:]))
@@ -108,32 +115,48 @@ def process_split(in_root: Path, out_root: Path, split: str, copy: bool) -> dict
     return {
         "split": split, "processed": processed,
         "with_labels": kept_with_labels, "empty": kept_empty,
-        "tank": class_counts[0], "soldier": class_counts[1], "military_vehicle": class_counts[2],
+        "class_counts": class_counts,
     }
+
+
+SCHEME_NAMES = {
+    "three_class": ["tank", "soldier", "military_vehicle"],
+    "four_class":  ["Soldier", "civilian_vehicle", "military_vehicle", "persons"],
+}
+SCHEME_MAPPINGS = {
+    "three_class": ROBOFLOW_TO_OURS_3CLS,
+    "four_class":  ROBOFLOW_TO_OURS_4CLS,
+}
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--input_root", required=True, help="path containing train/, valid/, test/")
     ap.add_argument("--output_root", required=True)
+    ap.add_argument("--scheme", choices=list(SCHEME_NAMES.keys()), default="three_class",
+                    help="which class scheme to use (default: three_class for legacy)")
     ap.add_argument("--copy", action="store_true", help="copy images instead of symlinking")
     args = ap.parse_args()
 
     in_root = Path(args.input_root)
     out_root = Path(args.output_root)
+    names = SCHEME_NAMES[args.scheme]
+    mapping = SCHEME_MAPPINGS[args.scheme]
+    n_classes = len(names)
 
     for split in ["train", "valid", "test"]:
-        result = process_split(in_root, out_root, split, args.copy)
+        result = process_split(in_root, out_root, split, args.copy, mapping, n_classes)
         if result.get("status") == "missing":
             print(f"[skip] {split}: missing")
             continue
+        cc = result["class_counts"]
+        cc_str = " ".join(f"{names[i]}={cc[i]}" for i in range(n_classes))
         print(
             f"[{split:5s}] processed={result['processed']}  "
-            f"with_labels={result['with_labels']}  empty={result['empty']}  "
-            f"tank={result['tank']} soldier={result['soldier']} mil_veh={result['military_vehicle']}"
+            f"with_labels={result['with_labels']}  empty={result['empty']}  {cc_str}"
         )
 
-    print(f"\nDone. Output: {out_root}")
+    print(f"\nDone. Output: {out_root}  scheme={args.scheme}")
     return 0
 
 
