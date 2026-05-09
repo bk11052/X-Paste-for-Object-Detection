@@ -1,0 +1,49 @@
+# Pose / angle specification for SD 1.5 instance pool generation (4-class).
+# Consumed by generation/gen_pose_instances.py (--poses_yaml).
+# The generator applies its prompt template:
+#   "a photo of {pose}, plain white background, isolated, studio lighting, full body, photorealistic"
+# Each entry yields n_per_pose images (default 30) using varying random seeds.
+#
+# Banned-word policy (enforced by tools/filter_pool_by_clip_margin.py):
+#   Soldier  prompts must NOT match: civilian, casual, formal, suit, businessman
+#   persons  prompts must NOT match: uniform, military, armed, rifle, weapon, soldier, combat
+#
+# Each pose string is what fills {pose}. The CLIP margin filter then drops ambiguous samples.
+
+poses:
+  - {category: Soldier, pose: "walking soldier in modern combat uniform with rifle"}
+  - {category: Soldier, pose: "standing soldier in modern combat uniform with rifle"}
+  - {category: Soldier, pose: "kneeling soldier in modern combat uniform with rifle"}
+  - {category: Soldier, pose: "prone soldier in modern combat uniform with rifle"}
+  - {category: Soldier, pose: "running soldier in modern combat uniform with rifle"}
+  - {category: Soldier, pose: "aiming soldier in modern combat uniform with rifle, side view"}
+  - {category: Soldier, pose: "soldier from behind in modern combat uniform with rifle"}
+  - {category: Soldier, pose: "soldier facing left in modern combat uniform with rifle"}
+  - {category: Soldier, pose: "soldier facing right in modern combat uniform with rifle"}
+  - {category: Soldier, pose: "crouching soldier in modern combat uniform with rifle"}
+
+  - {category: persons, pose: "walking civilian person in casual clothes"}
+  - {category: persons, pose: "standing civilian person in casual clothes"}
+  - {category: persons, pose: "civilian person sitting in casual clothes"}
+  - {category: persons, pose: "civilian person from behind in casual clothes"}
+  - {category: persons, pose: "civilian person side view in casual clothes"}
+  - {category: persons, pose: "civilian pedestrian in casual clothes, full body"}
+
+  - {category: military_vehicle, pose: "modern military armored personnel carrier, side view"}
+  - {category: military_vehicle, pose: "modern military armored personnel carrier, front view"}
+  - {category: military_vehicle, pose: "modern military armored personnel carrier, three-quarter view"}
+  - {category: military_vehicle, pose: "modern military armored personnel carrier, rear view"}
+  - {category: military_vehicle, pose: "modern military truck, side view"}
+
+  - {category: civilian_vehicle, pose: "modern civilian sedan car, side view"}
+  - {category: civilian_vehicle, pose: "modern civilian sedan car, front view"}
+  - {category: civilian_vehicle, pose: "modern civilian SUV, three-quarter view"}
+  - {category: civilian_vehicle, pose: "modern civilian sedan car, rear view"}
+
+# Defaults for the generator (CLI overrides these):
+defaults:
+  n_per_pose: 30
+  image_size: 512
+  steps: 30
+  guidance: 7.5
+  negative_prompt: "ugly, blurry, low quality, multiple subjects, deformed, watermark, text, cartoon, painting"
