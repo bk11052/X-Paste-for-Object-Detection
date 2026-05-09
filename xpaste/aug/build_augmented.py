@@ -31,6 +31,7 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import json
 import random
 import sys
 from dataclasses import dataclass
@@ -40,7 +41,9 @@ import numpy as np
 from PIL import Image
 
 from . import CLASSES, CLASS_TO_IDX
-from .distribution import InverseFreqSampler, JointHist, load_hist
+from .distribution import (
+    InverseFreqSampler, JointHist, N_CX_BINS, N_CY_BINS, _scale_bin, load_hist,
+)
 from .host_scene import HostScene, HostSceneAnalyzer
 from .scale_heuristic import CLASS_ASPECT, choose_scale
 from .style_match import (
@@ -59,6 +62,10 @@ class AcceptedPaste:
     bbox_xyxy: tuple[int, int, int, int]
     method: str
     instance_path: str | None
+    sampled_bin: tuple[int, int, int, int] | None = None  # (cls_idx, scale_bin, cx_bin, cy_bin)
+    target_scale: float = 0.0
+    target_cx: float = 0.0
+    target_cy: float = 0.0
 
 
 def _iou(a, b):
@@ -313,6 +320,13 @@ def process_host(
             target_cx = float(rng.uniform(0.1, 0.9))
             target_cy = float(rng.uniform(0.4, 0.9))
 
+        # Recover joint-hist bin index from continuous values for provenance.
+        cls_idx = CLASS_TO_IDX[cls]
+        sb = _scale_bin(target_scale, hist.scale_quartiles[cls])
+        cxb = int(np.clip(target_cx * N_CX_BINS, 0, N_CX_BINS - 1))
+        cyb = int(np.clip(target_cy * N_CY_BINS, 0, N_CY_BINS - 1))
+        sampled_bin = (cls_idx, sb, cxb, cyb)
+
         target_aspect = CLASS_ASPECT.get(cls, 1.0)
 
         # Decide target height/width
@@ -379,7 +393,11 @@ def process_host(
             img_rgb = lab_histogram_match_local(img_rgb, alpha_full, bbox)
 
         existing.append(bbox)
-        accepted.append(AcceptedPaste(cls=cls, bbox_xyxy=bbox, method=sr.method, instance_path=src_path))
+        accepted.append(AcceptedPaste(
+            cls=cls, bbox_xyxy=bbox, method=sr.method, instance_path=src_path,
+            sampled_bin=sampled_bin,
+            target_scale=target_scale, target_cx=target_cx, target_cy=target_cy,
+        ))
 
     return img_rgb, accepted
 
@@ -403,6 +421,8 @@ def main() -> int:
     ap.add_argument("--no_post_lab_match", action="store_true")
     ap.add_argument("--max_images", type=int, default=-1)
     ap.add_argument("--debug", action="store_true")
+    ap.add_argument("--save_meta", action="store_true",
+                    help="dump per-image paste provenance to <out_root>/meta.jsonl")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -450,6 +470,11 @@ def main() -> int:
     n_processed = 0
     n_accepted_imgs = 0
     n_pastes_total = 0
+
+    meta_fp = None
+    if args.save_meta:
+        meta_path = out_root / "meta.jsonl"
+        meta_fp = meta_path.open("w")
 
     for img_path in img_paths:
         label_path = label_dir / (img_path.stem + ".txt")
@@ -509,9 +534,40 @@ def main() -> int:
                 lines.append(f"{ci} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
             out_label_path.write_text("\n".join(lines) + ("\n" if lines else ""))
 
+            if meta_fp is not None:
+                rec = {
+                    "img": out_stem + img_path.suffix,
+                    "src_img": img_path.name,
+                    "H": host.H,
+                    "W": host.W,
+                    "host_accept": bool(host.accept),
+                    "reject_reason": host.reject_reason,
+                    "gt_count": len(host.gt_boxes_xyxy),
+                    "gt_classes": [int(c) for c in host.gt_classes],
+                    "paste_mode": args.paste_mode,
+                    "pastes": [
+                        {
+                            "cls": ap_.cls,
+                            "cls_idx": CLASS_TO_IDX[ap_.cls],
+                            "bbox_xyxy": [int(v) for v in ap_.bbox_xyxy],
+                            "scale_method": ap_.method,
+                            "instance_src": ap_.instance_path,
+                            "sampled_bin": list(ap_.sampled_bin) if ap_.sampled_bin else None,
+                            "target_scale": ap_.target_scale,
+                            "target_cx": ap_.target_cx,
+                            "target_cy": ap_.target_cy,
+                        } for ap_ in accepted
+                    ],
+                }
+                meta_fp.write(json.dumps(rec) + "\n")
+
             if args.debug:
                 print(f"{img_path.name}: accept={host.accept} reason={host.reject_reason} "
                       f"pastes={len(accepted)} -> {out_img_path}")
+
+    if meta_fp is not None:
+        meta_fp.close()
+        print(f"meta jsonl: {out_root}/meta.jsonl")
 
     print(f"\nimages processed: {n_processed}")
     print(f"images with at least 1 paste: {n_accepted_imgs}")
