@@ -93,8 +93,9 @@ names: { 0: Soldier, 1: civilian_vehicle, 2: military_vehicle, 3: persons }
 | `xpaste/aug/host_scene.py` | host SegFormer + accept/reject | NEW |
 | `xpaste/aug/scale_heuristic.py` | depth-free scale fallback | NEW |
 | `xpaste/aug/style_match.py` | Lab hist + selection + post-match | NEW |
-| `xpaste/aug/build_augmented.py` | top-level offline driver | NEW |
+| `xpaste/aug/build_augmented.py` | top-level offline driver (`--save_meta` JSONL provenance) | NEW |
 | `xpaste/aug/visualize.py` | bbox sanity 시각화 | NEW |
+| `tools/summarize_aug_distribution.py` | meta.jsonl → paper용 marginal/joint 분포 markdown | NEW |
 
 ## Experiment matrix
 
@@ -220,7 +221,15 @@ python -m xpaste.aug.style_match \
 ```
 
 ### Phase 3 — aug 데이터셋 4종 (4-way 병렬)
+
+`--save_meta` 가 핵심: 각 paste의 (class, scale_bin, cx_bin, cy_bin), scale_method, SD 풀 인스턴스 출처가 `<out_root>/meta.jsonl`에 기록됨. paper 본문 표 (sampler 효과 입증용) 필수.
+
 ```bash
+# 기존 aug 디렉토리 백업 (이미 빌드된 게 있다면):
+for x in B C D E; do
+  [ -d "$DATA/aug_${x}" ] && mv "$DATA/aug_${x}" "$DATA/aug_${x}.bak.$(date +%s)"
+done
+
 build_aug() {
   local MODE=$1 EXP=$2 GPU=$3
   CUDA_VISIBLE_DEVICES=$GPU nohup python -m xpaste.aug.build_augmented \
@@ -228,7 +237,7 @@ build_aug() {
     --pool_dir "$POOL/rgba_filtered" --pool_index "$CACHE/pool_index_v1.npz" \
     --hist "$CACHE/dist_v1.json" \
     --paste_mode "$MODE" --pastes_per_image 3 --temperature 1.0 \
-    --out_root "$DATA/aug_${EXP}/train" --seed 0 \
+    --out_root "$DATA/aug_${EXP}/train" --save_meta --seed 0 \
     > "logs/aug_${EXP}.log" 2>&1 &
 }
 build_aug real_random   B 0
@@ -237,11 +246,36 @@ build_aug scene_uniform D 2
 build_aug style_full    E 3
 wait
 
+# 검증: meta.jsonl 라인 수 == 이미지 수
+for x in B C D E; do
+  N_IMG=$(ls "$DATA/aug_${x}/train/images" | wc -l)
+  N_META=$(wc -l < "$DATA/aug_${x}/train/meta.jsonl")
+  echo "aug_${x}: images=$N_IMG meta_lines=$N_META"
+done
+
 python -m xpaste.aug.visualize \
   --img  "$DATA/aug_E/train/images/$(ls $DATA/aug_E/train/images | head -1)" \
   --label "$DATA/aug_E/train/labels/$(ls $DATA/aug_E/train/labels | head -1)" \
   --out viz/aug_E_check.png
 ```
+
+### Phase 3.5 — aug 분포 summary (paper 본문 표)
+
+meta.jsonl 4개 → 모드 간 marginal/joint 분포 비교 markdown.
+
+```bash
+mkdir -p reports
+python tools/summarize_aug_distribution.py \
+  --aug_root "$DATA" --modes B C D E \
+  --hist "$CACHE/dist_v1.json" \
+  --out reports/aug_summary.md
+cat reports/aug_summary.md
+```
+
+기대 결과:
+- **per-class**: E의 underrepresented class (`military_vehicle`, GT 363개) 비율이 D 대비 +5pp 이상이면 inverse-freq 효과 입증.
+- **scale bin**: E의 bin 0 + bin 3 (tail) 합이 D 대비 명확히 큼.
+- **scale method**: E에서 `gt_anchor` 가 50%+ 면 fallback 사용 빈도 정상.
 
 ### Phase 4 — Exp B/C/D/E 학습 (36 runs, 4-way 병렬)
 ```bash
