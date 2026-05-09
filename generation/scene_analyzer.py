@@ -63,18 +63,23 @@ ADE20K_PASTE_REGIONS = {
 
 # Category -> preferred paste regions (in priority order). Used by paste planner.
 CATEGORY_TO_REGIONS = {
+    # Original 3-class names (preserved for backward compatibility)
     "soldier": ["ground", "road"],
     "tank":    ["ground", "road"],
     "military_vehicle": ["road", "ground"],
     "plane":   ["sky"],
     "helicopter": ["sky"],
+    # New 4-class names (used by xpaste/aug pipeline)
+    "Soldier":          ["ground", "road"],
+    "persons":          ["ground", "road"],
+    "civilian_vehicle": ["road", "ground"],
 }
 
 
 @dataclass
 class SceneAnalysis:
     image: Image.Image
-    depth_norm: np.ndarray            # HxW float32 in [0,1], 0=near, 1=far
+    depth_norm: np.ndarray | None     # HxW float32 in [0,1] (0=near, 1=far). None when use_depth=False.
     seg_class: np.ndarray             # HxW int, ADE20K class id
     seg_id_to_name: dict              # dict id -> ADE20K class name
     region_masks: dict                # {"ground": HxW bool, ...}
@@ -88,12 +93,22 @@ class SceneAnalyzer:
         depth_model: str = "depth-anything/Depth-Anything-V2-Small-hf",
         seg_model: str = "nvidia/segformer-b5-finetuned-ade-640-640",
         device: str | None = None,
+        use_depth: bool = True,
     ):
-        from transformers import AutoImageProcessor, AutoModelForDepthEstimation, SegformerForSemanticSegmentation
+        """Use `use_depth=False` for the augmentation pipeline on real host images;
+        depth estimation transferred poorly there in prior experiments and the new
+        scale heuristic does not need it."""
+        from transformers import AutoImageProcessor, SegformerForSemanticSegmentation
 
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
-        self.depth_proc = AutoImageProcessor.from_pretrained(depth_model)
-        self.depth_model = AutoModelForDepthEstimation.from_pretrained(depth_model).to(self.device).eval()
+        self.use_depth = use_depth
+        if use_depth:
+            from transformers import AutoModelForDepthEstimation
+            self.depth_proc = AutoImageProcessor.from_pretrained(depth_model)
+            self.depth_model = AutoModelForDepthEstimation.from_pretrained(depth_model).to(self.device).eval()
+        else:
+            self.depth_proc = None
+            self.depth_model = None
         self.seg_proc = AutoImageProcessor.from_pretrained(seg_model)
         self.seg_model = SegformerForSemanticSegmentation.from_pretrained(seg_model).to(self.device).eval()
 
@@ -146,7 +161,7 @@ class SceneAnalyzer:
 
     def analyze(self, image: str | Path | Image.Image) -> SceneAnalysis:
         img = Image.open(image).convert("RGB") if not isinstance(image, Image.Image) else image.convert("RGB")
-        depth = self._predict_depth(img)
+        depth = self._predict_depth(img) if self.use_depth else None
         seg = self._predict_seg(img)
 
         region_masks = {}
@@ -169,7 +184,8 @@ def visualize(scene: SceneAnalysis, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     scene.image.save(out_dir / "00_image.png")
 
-    plt.imsave(out_dir / "01_depth.png", scene.depth_norm, cmap="magma")
+    if scene.depth_norm is not None:
+        plt.imsave(out_dir / "01_depth.png", scene.depth_norm, cmap="magma")
 
     fig, ax = plt.subplots(1, len(scene.region_masks), figsize=(4 * len(scene.region_masks), 4))
     if len(scene.region_masks) == 1:
@@ -193,9 +209,10 @@ def main() -> int:
     ap.add_argument("--out_dir", required=True)
     ap.add_argument("--depth_model", default="depth-anything/Depth-Anything-V2-Small-hf")
     ap.add_argument("--seg_model", default="nvidia/segformer-b5-finetuned-ade-640-640")
+    ap.add_argument("--no_depth", action="store_true", help="skip depth model (SegFormer only)")
     args = ap.parse_args()
 
-    sa = SceneAnalyzer(args.depth_model, args.seg_model)
+    sa = SceneAnalyzer(depth_model=args.depth_model, seg_model=args.seg_model, use_depth=not args.no_depth)
     scene = sa.analyze(args.image)
     print(f"image: {scene.W}x{scene.H}")
     for r, m in scene.region_masks.items():
