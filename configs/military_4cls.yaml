@@ -1,0 +1,15 @@
+# YOLO dataset config for military 4-class detection (Roboflow Custom Object Detection -Military- v1)
+# Classes: Soldier, civilian_vehicle, military_vehicle, persons
+# Train path is swapped per experiment by tools/run_yolo_matrix.sh
+# (real / aug_B / aug_C / aug_D / aug_E / aug_E_T0.5 / aug_E_T2.0)
+
+path: /workspace/XPaste/data/military_v1
+train: real/train/images
+val:   real/valid/images
+test:  real/test/images
+
+names:
+  0: Soldier
+  1: civilian_vehicle
+  2: military_vehicle
+  3: persons
