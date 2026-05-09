@@ -7,6 +7,7 @@ from tqdm import tqdm
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
+from segment_methods.checkpoints import resolve_checkpoint
 
 def renorm(x):
     xf=x.flatten(1)
@@ -23,6 +24,13 @@ class selfreformer:
         self.module = importlib.import_module("model.{}".format(opt['model'].lower()))
         self.dev = device
         self.net = self.module.Net(opt).eval().to(self.dev)
+        ckpt = resolve_checkpoint(
+            [
+                "segment_methods/checkpoints/selfreformer/best_DUTS-TE.pt",
+                ckpt,
+            ],
+            "SelfReformer",
+        )
         state_dict = torch.load(ckpt, map_location='cpu')
         self.net.load_state_dict(state_dict)
         self.norm = transforms.Normalize(mean=(0.485, 0.458, 0.407),std=(0.229, 0.224, 0.225))
@@ -38,4 +46,3 @@ class selfreformer:
         pred_sal=renorm(pred_sal)
         pred_sal = (pred_sal * 255.).detach().cpu().numpy().astype('uint8')
         return pred_sal
-

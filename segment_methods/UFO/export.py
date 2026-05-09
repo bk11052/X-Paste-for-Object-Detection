@@ -6,6 +6,7 @@ from torchvision import transforms
 from model_image import build_model
 import numpy as np
 import torch.nn.functional as F
+from segment_methods.checkpoints import resolve_checkpoint
 
 def renorm(x):
     xf=x.flatten(1)
@@ -17,6 +18,13 @@ class UFO:
     def __init__(self,device,ckpt='/mnt/home/UFO/image_best.pth') -> None:
         self.dev=device
         self.net = build_model(device).to(device).eval()
+        ckpt = resolve_checkpoint(
+            [
+                "segment_methods/checkpoints/ufo/image_best.pth",
+                ckpt,
+            ],
+            "UFO",
+        )
         ckpt=torch.load(ckpt, map_location=self.dev)
         self.net.load_state_dict({i[7:]:ckpt[i] for i in ckpt})
         self.img_size=224

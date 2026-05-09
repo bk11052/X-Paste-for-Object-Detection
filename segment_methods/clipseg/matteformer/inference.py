@@ -93,6 +93,7 @@ def generator_tensor_dict(image, trimap):
 
 
 def build_model(config_file='clipseg/matteformer/config/MatteFormer_Composition1k.toml',ckpt='clipseg/matteformer/best_model.pth'):
+    ckpt = os.environ.get("MATTEFORMER_CKPT", ckpt)
     with open(config_file) as f:
         utils.load_config(toml.load(f))
     model = networks.get_generator(is_train=False)

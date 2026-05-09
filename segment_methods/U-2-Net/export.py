@@ -2,6 +2,7 @@ from model import U2NET
 import torch
 from torchvision import transforms
 import torch.nn.functional as F
+from segment_methods.checkpoints import resolve_checkpoint
 
 def renorm(x):
     xf=x.flatten(1)
@@ -13,7 +14,14 @@ class u2net:
     def __init__(self,device) -> None:
         self.dev = device
         self.net=U2NET(3,1).eval().to(self.dev)
-        self.net.load_state_dict(torch.load('/mnt/home/syn4det/U-2-Net/saved_models/u2net.pth',map_location=self.dev))
+        ckpt = resolve_checkpoint(
+            [
+                "segment_methods/checkpoints/u2net/u2net.pth",
+                "/mnt/home/syn4det/U-2-Net/saved_models/u2net.pth",
+            ],
+            "U2Net",
+        )
+        self.net.load_state_dict(torch.load(ckpt,map_location=self.dev))
         self.transform = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
     def forward(self,img,**kwargs):

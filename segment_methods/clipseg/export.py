@@ -12,12 +12,30 @@ import os
 sys.path.append(os.path.join(os.getcwd(),'clipseg','matteformer'))
 
 from matteformer.inference import build_model,matting
+from segment_methods.checkpoints import resolve_checkpoint
 
 class clipseg_matting:
     def __init__(self,device) -> None:
         self.dev = device
         self.clipseg = CLIPDensePredT(version='ViT-B/16', reduce_dim=64).to(self.dev).eval()
-        self.clipseg.load_state_dict(torch.load('/mnt/home/clipseg/weights/rd64-uni.pth', map_location=self.dev), strict=False)
+        clipseg_ckpt = resolve_checkpoint(
+            [
+                os.environ.get("CLIPSEG_CKPT", ""),
+                "segment_methods/checkpoints/clipseg/weights/rd64-uni.pth",
+                "/mnt/home/clipseg/weights/rd64-uni.pth",
+            ],
+            "CLIPSeg-D64",
+        )
+        matteformer_ckpt = resolve_checkpoint(
+            [
+                os.environ.get("MATTEFORMER_CKPT", ""),
+                "segment_methods/checkpoints/clipseg/matteformer/best_model.pth",
+                "segment_methods/clipseg/matteformer/best_model.pth",
+            ],
+            "MatteFormer",
+        )
+        self.clipseg.load_state_dict(torch.load(clipseg_ckpt, map_location=self.dev), strict=False)
+        os.environ["MATTEFORMER_CKPT"] = matteformer_ckpt
         self.matteformer=build_model()
         self.transform = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
