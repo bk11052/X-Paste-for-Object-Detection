@@ -78,6 +78,8 @@ names: { 0: Soldier, 1: civilian_vehicle, 2: military_vehicle, 3: persons }
 | `generation/scene_analyzer.py` | SegFormer ADE20K (use_depth=False 옵션 추가) | modified |
 | `generation/adaptive_paste_planner.py` | depth=None 경로 추가 | modified |
 | `tools/remap_roboflow_labels.py` | --scheme {three_class, four_class} | modified |
+| `tools/check_split_leakage.py` | prefix-overlap leakage 진단 | NEW |
+| `tools/scene_disjoint_split.py` | raw Roboflow → scene-disjoint split | NEW |
 | `tools/filter_pool_by_clip_margin.py` | R1 mitigation 풀 필터 | NEW |
 | `tools/run_yolo_matrix.sh` | 실험 행렬 드라이버 | NEW |
 | `xpaste/aug/__init__.py` | aug 패키지 (CLASSES) | NEW |
@@ -103,52 +105,173 @@ names: { 0: Soldier, 1: civilian_vehicle, 2: military_vehicle, 3: persons }
 
 Eval: per-class AP50 on real test (197 imgs), 3 seeds mean ± std, paired bootstrap test for D vs E.
 
-## Commands (server)
+## Commands (server, 4 GPUs)
 
+호스트 `/home/gpuadmin/Gachon/kyu216/X-Paste/XPaste`. Docker 진입 후 `/workspace/XPaste`에서 작업. **항상 `tmux` 안에서 실행** (nohup wait가 셸 끊기면 풀림 — R9). 자세한 phase 의존도/시간 추정은 `/Users/kyu216/.claude/plans/pure-stargazing-octopus.md` 참조.
+
+전체 흐름:
+```
+Phase 0 setup (10분)
+  ↓
+Phase 1A Exp A train (GPU 0,1,2)  ─┐
+Phase 1B SD pool gen (GPU 3)      ─┴── 병렬 ~2.5h
+  ↓
+Phase 2 dist + pool index (5분)
+  ↓
+Phase 3 aug B/C/D/E build (GPU 0~3 병렬, 30~60분)
+  ↓
+Phase 4 Exp B/C/D/E train (GPU 0~3 병렬, ~10h)
+  ↓
+Phase 5 분석 (1h)
+```
+
+### Phase 0 — setup
 ```bash
+# (호스트) docker 진입
+cd /home/gpuadmin/Gachon/kyu216/X-Paste/XPaste
+git checkout feat/dist-aware-paste-4cls && git pull
+tmux new -s xpaste
+docker run --gpus all -it --rm --shm-size=32g \
+  -v $(pwd):/workspace/XPaste \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  xpaste bash
+
+# (컨테이너 안)
 cd /workspace/XPaste
-DATA_RAW=/workspace/datasets/Custom_Object_Detection_Military_v1
-DATA=/workspace/XPaste/data/military_v1
-POOL=/workspace/XPaste/output/pool_v1
-CACHE=/workspace/XPaste/cache
-mkdir -p "$DATA" "$POOL" "$CACHE"
+pip install ultralytics "numpy<2" scikit-image open-clip-torch
+python -c "import numpy, ultralytics, skimage, open_clip; print('deps ok', numpy.__version__)"
 
-# 1. 4-class 데이터 정리
+export DATA_RAW="/workspace/XPaste/data/Custom Object Detection -Military-.v1i.yolov8"
+export DATA="/workspace/XPaste/data/military_v1"
+export POOL="/workspace/XPaste/output/pool_v1"
+export CACHE="/workspace/XPaste/cache"
+export RUNS="/workspace/XPaste/runs/military_v1"
+mkdir -p "$DATA" "$POOL" "$CACHE" "$RUNS" /workspace/XPaste/viz logs
+
+# Roboflow 기본 split은 image-level random — scene-disjoint 보장 X.
+# 첫 학습에서 yolo11n mAP50=0.913 (예상 0.55)가 나와 leakage 확정 → scene-disjoint 재분할.
+python tools/check_split_leakage.py --raw_root "$DATA_RAW"
+# train∩test / |test| > 5%면 재분할 진행:
+python tools/scene_disjoint_split.py \
+  --raw_root "$DATA_RAW" --out_root "$DATA/real_raw_new" \
+  --ratios 0.70 0.20 0.10 --seed 0
 python tools/remap_roboflow_labels.py --scheme four_class \
-  --input_root "$DATA_RAW" --output_root "$DATA/real"
+  --input_root "$DATA/real_raw_new" --output_root "$DATA/real"
+rm -rf "$DATA/real_raw_new"
 
-# 2. SD 풀 → CLIPSeg → margin 필터
-python generation/gen_pose_instances.py \
-  --poses_yaml configs/instance_poses_4cls.yaml --out "$POOL/raw" \
-  --n_per_pose 30 --image_size 512 --steps 30 --guidance 7.5
-python generation/segment_pose_hf.py --in "$POOL/raw" --out "$POOL/rgba"
-python tools/filter_pool_by_clip_margin.py --in "$POOL/rgba" --out "$POOL/rgba_filtered" \
-  --margin 0.10 --pairs "Soldier:civilian persons:soldier_uniform"
+ls "$DATA/real/train/images" | wc -l   # ~1352
+ls "$DATA/real/valid/images" | wc -l   # ~385
+ls "$DATA/real/test/images"  | wc -l   # ~197
+```
 
-# 3. 분포 / 풀 캐시
-python -m xpaste.aug.distribution --labels_dir "$DATA/real/train/labels" --out "$CACHE/dist_v1.json"
-python -m xpaste.aug.style_match --pool_dir "$POOL/rgba_filtered" --out "$CACHE/pool_index_v1.npz"
+### Phase 1 — Exp A baseline + SD 풀 (병렬 launch)
+```bash
+# 1A: Exp A 9 runs (GPU 0/1/2 each → seed 0,1,2 순차)
+DEVICE=0 EXPS=A MODELS=yolo11n SEEDS="0 1 2" \
+  nohup bash tools/run_yolo_matrix.sh > logs/A_n.log 2>&1 &
+DEVICE=1 EXPS=A MODELS=yolo11s SEEDS="0 1 2" \
+  nohup bash tools/run_yolo_matrix.sh > logs/A_s.log 2>&1 &
+DEVICE=2 EXPS=A MODELS=yolo11m SEEDS="0 1 2" \
+  nohup bash tools/run_yolo_matrix.sh > logs/A_m.log 2>&1 &
 
-# 4. 실험별 augmented set 생성 (B/C/D/E)
-for MODE in real_random pool_random scene_uniform style_full; do
-  case $MODE in real_random) E=B ;; pool_random) E=C ;; scene_uniform) E=D ;; style_full) E=E ;; esac
-  python -m xpaste.aug.build_augmented \
+# 1B: SD 풀 (GPU 3)
+# 주의: gen_pose_instances.py는 --scenarios/--output_dir/--samples,
+#       segment_pose_hf.py는 segment_methods/ 아래에 있고 --input_dir/--output_dir.
+CUDA_VISIBLE_DEVICES=3 nohup bash -c '
+  set -e
+  python generation/gen_pose_instances.py \
+    --scenarios configs/instance_poses_4cls.yaml \
+    --output_dir "$POOL/raw" --samples 30 --image_size 512 --steps 30 --guidance 7.5
+  python segment_methods/segment_pose_hf.py \
+    --input_dir "$POOL/raw" --output_dir "$POOL/rgba"
+  python tools/filter_pool_by_clip_margin.py \
+    --in "$POOL/rgba" --out "$POOL/rgba_filtered" \
+    --margin 0.10 --pairs "Soldier:civilian persons:soldier_uniform"
+' > logs/sdpool.log 2>&1 &
+
+# 모니터링: tail -f logs/A_*.log logs/sdpool.log
+wait
+echo "[Phase 1] complete"
+
+# Sanity 확인
+for M in yolo11n yolo11s yolo11m; do
+  for S in 0 1 2; do
+    F="$RUNS/A_${M}_s${S}/results.csv"
+    [ -f "$F" ] && echo "A_${M}_s${S}: $(tail -1 $F | awk -F, '{print "mAP50="$8}')" || echo "A_${M}_s${S}: MISSING"
+  done
+done
+ls "$POOL/rgba_filtered" | awk -F'__' '{print $1}' | sort | uniq -c
+```
+
+기대값: yolo11n mAP50 ~0.55, s ~0.62, m ~0.66 (±0.03). 풀 클래스당 ≥100 인스턴스.
+
+### Phase 2 — 분포 + 풀 인덱스
+```bash
+python -m xpaste.aug.distribution \
+  --labels_dir "$DATA/real/train/labels" --out "$CACHE/dist_v1.json"
+python -m xpaste.aug.style_match \
+  --pool_dir "$POOL/rgba_filtered" --out "$CACHE/pool_index_v1.npz"
+```
+
+### Phase 3 — aug 데이터셋 4종 (4-way 병렬)
+```bash
+build_aug() {
+  local MODE=$1 EXP=$2 GPU=$3
+  CUDA_VISIBLE_DEVICES=$GPU nohup python -m xpaste.aug.build_augmented \
     --host_root "$DATA/real/train" \
     --pool_dir "$POOL/rgba_filtered" --pool_index "$CACHE/pool_index_v1.npz" \
     --hist "$CACHE/dist_v1.json" \
-    --paste_mode $MODE --pastes_per_image 3 --temperature 1.0 \
-    --out_root "$DATA/aug_${E}/train" --seed 0
-done
+    --paste_mode "$MODE" --pastes_per_image 3 --temperature 1.0 \
+    --out_root "$DATA/aug_${EXP}/train" --seed 0 \
+    > "logs/aug_${EXP}.log" 2>&1 &
+}
+build_aug real_random   B 0
+build_aug pool_random   C 1
+build_aug scene_uniform D 2
+build_aug style_full    E 3
+wait
 
-# 5. 시각화 sanity check
 python -m xpaste.aug.visualize \
-  --img "$DATA/aug_E/train/images/$(ls $DATA/aug_E/train/images | head -1)" \
+  --img  "$DATA/aug_E/train/images/$(ls $DATA/aug_E/train/images | head -1)" \
   --label "$DATA/aug_E/train/labels/$(ls $DATA/aug_E/train/labels | head -1)" \
   --out viz/aug_E_check.png
-
-# 6. 학습 행렬 (5 exp x 3 model x 3 seed = 45 runs)
-bash tools/run_yolo_matrix.sh
 ```
+
+### Phase 4 — Exp B/C/D/E 학습 (36 runs, 4-way 병렬)
+```bash
+DEVICE=0 EXPS=B MODELS="yolo11n yolo11s yolo11m" SEEDS="0 1 2" \
+  nohup bash tools/run_yolo_matrix.sh > logs/B_all.log 2>&1 &
+DEVICE=1 EXPS=C MODELS="yolo11n yolo11s yolo11m" SEEDS="0 1 2" \
+  nohup bash tools/run_yolo_matrix.sh > logs/C_all.log 2>&1 &
+DEVICE=2 EXPS=D MODELS="yolo11n yolo11s yolo11m" SEEDS="0 1 2" \
+  nohup bash tools/run_yolo_matrix.sh > logs/D_all.log 2>&1 &
+DEVICE=3 EXPS=E MODELS="yolo11n yolo11s yolo11m" SEEDS="0 1 2" \
+  nohup bash tools/run_yolo_matrix.sh > logs/E_all.log 2>&1 &
+wait
+```
+
+### Phase 5 — 결과 집계
+```bash
+python - <<'PY'
+import pandas as pd, glob, os, re
+rows = []
+for d in sorted(glob.glob(os.environ['RUNS'] + '/[A-E]_yolo11*_s*')):
+    name = os.path.basename(d)
+    csv = os.path.join(d, 'results.csv')
+    if not os.path.exists(csv): continue
+    df = pd.read_csv(csv)
+    last = df.iloc[-1]
+    m = re.match(r'(\w)_yolo11(\w)_s(\d)', name)
+    rows.append(dict(exp=m.group(1), model='yolo11'+m.group(2), seed=int(m.group(3)),
+                     mAP50=last.get('metrics/mAP50(B)', float('nan')),
+                     mAP=last.get('metrics/mAP50-95(B)', float('nan'))))
+out = pd.DataFrame(rows)
+print(out.groupby(['exp','model'])['mAP50'].agg(['mean','std']).unstack().round(3))
+out.to_csv('runs/military_v1/summary.csv', index=False)
+PY
+```
+
+핵심 비교: A vs E (+2.0 mAP50 이상이면 paper-worthy), D vs E (+0.8 이상이면 inverse-freq + style match novelty 정당).
 
 ## Reused from Original X-Paste
 
