@@ -4,136 +4,168 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repo started from **X-Paste (ICML 2023)** but has been repurposed for our paper **"Scenario-aware Copy-Paste Augmentation for Military Object Detection"** (한국군사과학기술학회). We synthesize training images by composing SDXL-generated scenario backgrounds with a pose-rich SD 1.5 instance pool, using depth + segmentation to paste objects in semantically valid locations. Detection target is 3 classes — `tank`, `soldier`, `military_vehicle` — trained with YOLO11 (n/s/m) and RT-DETR.
+This repo started from **X-Paste (ICML 2023)** and has been repurposed for our paper **"Distribution-aware Generative Copy-Paste for Military Object Detection"** (한국군사과학기술학회).
 
-## Pipeline (7 Stages)
+**Direction (2026-05-09 onward)**: Augmentation-focused. We do **not** generate backgrounds. Instead, we paste SD 1.5–generated instances onto existing real training images. Novelty is **distribution-aware paste sampling** — bias paste configs toward underrepresented bins of the host dataset's empirical (class × scale × location) distribution, with style-matched instance selection from a diverse pool.
 
-```mermaid
-flowchart TD
-    S1["Stage 1 · Scenario Specification<br/><b>configs/scenarios.yaml</b><br/>10 edge-case scenarios<br/>background seed + instance spec (category, pose, count, distance_bias)"]
-    S2["Stage 2 · LLM Background Prompt Expansion<br/><b>gen_scenario_prompts.py</b><br/>GPT-4: seed → 4 detailed SDXL prompts<br/>banned-word check (people / vehicles)"]
-    S3["Stage 3 · SDXL Background + Quality Control<br/><b>gen_singleshot_scenes.py + filter_backgrounds.py</b><br/>1024×576, 16–32 imgs/scenario<br/>DETR leak filter (cars / persons / trains)"]
-    S4["Stage 4 · Pose-aware Instance Pool<br/><b>gen_pose_instances.py + segment_pose_hf.py</b><br/>SD 1.5, 100 imgs × 13 poses<br/>HF CLIPSeg + CLIP score → RGBA crop"]
-    S5["Stage 5 · Scene Understanding<br/><b>scene_analyzer.py</b><br/>DepthAnything-V2 (depth)<br/>SegFormer ADE20K (region: ground / road / sky / building / water)"]
-    S6["Stage 6 · Adaptive Paste Planner ★ Core Novelty<br/><b>adaptive_paste_planner.py</b><br/>region–category matching · distance band (near/mid/far)<br/>per-category log-scale curve · pose-aware aspect override<br/>frame containment ≥ 92% · center-distance overlap reject"]
-    S7["Stage 7 · Composition + Annotation<br/><b>compose_scene.py</b><br/>alpha blending paste<br/>COCO JSON output"]
+Detection target: 4 classes — `Soldier`, `civilian_vehicle`, `military_vehicle`, `persons`. Trained with YOLO11 (n/s/m).
 
-    S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
+(Prior direction — SDXL scenario backgrounds + scene-aware paste — failed empirically: synth-only mAP50 < 0.01, mixed only +1.6~+4.8pt. Files preserved for reference, not in active path; see "Deprecated" below.)
+
+## Pipeline
+
 ```
-
-Generated dataset (latest run): `output/composed_train_v2/{images,annotations.json,visualizations}`.
+[Real train labels]  ──► Distribution Analyzer (joint hist 4×4×4×4 = 256 cells)
+                                    │
+                                    ▼
+                         Inverse-Freq Sampler (T=1.0)
+                                    │
+[Real train img]  ──► HostSceneAnalyzer (SegFormer ADE20K only)
+                      └─► host_is_acceptable(min_paste=0.10, max_gt_area=0.50, max_gt_count=8)
+                                    │
+                                    ▼
+                       Placement Planner (depth-free)
+                       ├── region match (ground/road) via SegFormer
+                       ├── scale heuristic (same-class anchor → cy regression → fallback)
+                       └── frame containment + overlap reject
+                                    │
+[SD 1.5 instance pool, RGBA]  ──► Style-matched Selection (Lab hist χ², top-k=8)
+                                    │
+                                    ▼
+                       alpha-blend + post Lab L-channel match
+                                    │
+                                    ▼
+                       Augmented YOLO dataset → YOLO11 n/s/m × 3 seeds
+```
 
 ## Contributions
 
-1. **Scenario-aware Background Generation (LLM 도입)** — LLM이 군사 시나리오 맥락에 맞춘 배경을 자동 생성. 단순 도시/자연 배경(X-Paste)이 아니라 전투 거리, 사막 대치, 야간 작전, 연막 전장 등 시나리오 의미가 살아있는 배경.
-2. **Scene-aware Adaptive Copy-Paste** — Random paste(X-Paste)를 depth + semantic segmentation 기반 의미적 paste로 교체. 객체 카테고리에 맞는 region(soldier→ground, car→road)과 depth에 비례한 크기로 자동 배치.
-3. **Pose-rich Instance Pool** — 시나리오에서 자세를 자동 추출 → 자세별 SD 생성. X-Paste의 "a photo of a single soldier" 단일 자세 대비 walking / standing / kneeling / running / prone / from-behind / facing-left / facing-right 등 풍부.
-4. **Quality Control via Pretrained Detector** — SDXL 배경 leak 문제를 사전 학습 detector(DETR)로 자동 검출·제거. unlabeled-object → false-negative 학습 신호 차단.
-5. **Edge-case Stress Test 시나리오** — 공간 / 규모 / 가시성 축으로 10개 challenging case 정의 (마주보는 탱크, 멀리 보이는 순찰대, 위장 군인 등).
+1. **Distribution-aware paste sampling** — inverse-frequency biased sampling from joint (class, scale, location) histogram. Oversamples tail bins for true augmentation value, not just "more data".
+2. **Style-matched instance selection** — Lab histogram chi-square between candidate instance and host crop; top-k closest sampled. Post-paste L-channel matching with capped shift (≤20).
+3. **Depth-free scale heuristic** — three-step fallback (same-class GT anchor → cy linear regression → distribution sample). Avoids unreliable depth estimation that hurt prior runs.
+4. **Class-noise mitigation** — for the Soldier-vs-persons label leakage in the dataset, narrow prompts + banned-word lists + post-generation CLIP margin filter (≥0.10).
 
-## 시나리오 카테고리 (10개)
+## Dataset
 
-| # | 시나리오 | 인스턴스 자세 | 도전 |
-|---|---------|--------------|------|
-| 1 | 걸어오는 군인 | walking_soldier × 1 | 자세 |
-| 2 | 분대 군집 | mixed_soldier × 5 | 다중 |
-| 3 | 마주보는 탱크 | tank_left + tank_right | 공간 관계 |
-| 4 | 탱크 종대 | tank_side × 4 | 선형 배치 |
-| 5 | 호송 차량 행렬 | car_side × 6 | 다수 차량 |
-| 6 | 야간 정찰 | walking_soldier × 2 | 저조도 |
-| 7 | 연막 속 진격 | running_soldier × 3 | 가림 |
-| 8 | 위장 군인 | prone_soldier × 1 | 배경 융합 |
-| 9 | 멀리 보이는 순찰대 | walking_soldier × 4 (소형) | 소형 객체 |
-| 10 | 지평선의 탱크 | tank × 2 (소형) | 소형 객체 |
-
-## 실험 설계 (6 exps × 3 models = 18 runs)
-
-**카테고리**: tank · soldier · military_vehicle
-**모델**: YOLOv8 · YOLO11 (n/s/m) · RT-DETR
-**평가**: mAP + AP_small/medium/large + 카테고리별 AP
-
-| Exp | Train | 평가 |
-|-----|-------|------|
-| Exp-1 | 실제 데이터 only | 실제 testset (baseline) |
-| Exp-2 | X-Paste random paste (기존) | 실제 testset |
-| Exp-3 | SDXL single-shot only (객체까지 SDXL) | 실제 testset |
-| Exp-4 | SDXL 시나리오 배경 + random paste | 실제 testset |
-| Exp-5 | **SDXL 시나리오 배경 + scene-aware paste (제안)** | 실제 testset |
-| Exp-6 | Exp-5 + 실제 데이터 혼합 | 실제 testset |
-
-핵심 비교: Exp-2 vs Exp-5 (scene-aware 효과), Exp-3 vs Exp-5 (single-shot vs 우리), Exp-4 vs Exp-5 (paste 방식 ablation), Exp-6 vs Exp-1 (보강 효과).
-
-## Dataset Layout
+Base: `Custom Object Detection -Military-.v1i.yolov8` (Roboflow, 1934 imgs, 4-class, native variable resolution 523×640 to 6720×4480, no preprocessing).
 
 ```
 data/
-├── roboflow_soldier_raw/soldier.v1i.yolov11/{train,valid,test}/{images,labels}   # raw Roboflow (12 class)
-└── military_yolo/
-    ├── real/{train,valid,test}/{images,labels}    # remapped to 3-class (tools/remap_roboflow_labels.py)
-    └── synth/{train,val}/{images,labels}          # synthesized via 7-stage pipeline
-output/composed_train_v2/                          # 가장 최근 합성 출력 (COCO JSON + images + viz)
+└── military_v1/
+    ├── real/{train,valid,test}/{images,labels}    # 4-class via remap_roboflow_labels.py --scheme four_class
+    └── aug_{B,C,D,E}/train/{images,labels}        # 실험별 증강 train split
 ```
 
-YOLO data config: `configs/military.yaml`
+Train class instances: Soldier 577 / civilian_vehicle 424 / military_vehicle 363 / persons 856.
+
+YOLO config (`configs/military_4cls.yaml`):
 ```yaml
-path: /workspace/XPaste/data/military_yolo
-train: synth/train/images
-val:   synth/val/images
+path: /workspace/XPaste/data/military_v1
+train: real/train/images        # swapped per experiment by run_yolo_matrix.sh
+val:   real/valid/images
 test:  real/test/images
-names: { 0: tank, 1: soldier, 2: military_vehicle }
+names: { 0: Soldier, 1: civilian_vehicle, 2: military_vehicle, 3: persons }
 ```
 
-## 신규 파이프라인 스크립트 (요약)
+## Pipeline scripts
 
-| 파일 | 역할 |
-|------|------|
-| `configs/scenarios.yaml` | 10개 시나리오 정의 |
-| `generation/gen_scenario_prompts.py` | GPT-4로 SDXL 배경 프롬프트 확장 + 캐시 |
-| `generation/gen_singleshot_scenes.py` | SDXL 1024×576 배경 생성 |
-| `generation/filter_backgrounds.py` | DETR로 leak 객체 자동 검출·제거 |
-| `generation/gen_pose_instances.py` | SD 1.5 자세별 인스턴스 생성 |
-| `generation/segment_pose_hf.py` | HF CLIPSeg + CLIP 필터 + RGBA crop |
-| `generation/scene_analyzer.py` | DepthAnything-V2 + SegFormer ADE20K |
-| `generation/adaptive_paste_planner.py` | depth/seg 기반 paste 위치·크기 결정 |
-| `generation/compose_scene.py` | 통합 파이프라인 + COCO JSON 출력 |
-| `tools/remap_roboflow_labels.py` | Roboflow 12-class → 우리 3-class YOLO |
-| `tools/coco_to_yolo.py` | COCO JSON → YOLO txt 변환 |
+| File | Role | Status |
+|------|------|--------|
+| `configs/instance_poses_4cls.yaml` | 4-class 자세/각도 spec | NEW |
+| `configs/military_4cls.yaml` | YOLO data config | NEW |
+| `generation/gen_pose_instances.py` | SD 1.5 자세별 인스턴스 생성 | reused |
+| `generation/segment_pose_hf.py` | CLIPSeg + CLIP 필터 → RGBA | reused |
+| `generation/scene_analyzer.py` | SegFormer ADE20K (use_depth=False 옵션 추가) | modified |
+| `generation/adaptive_paste_planner.py` | depth=None 경로 추가 | modified |
+| `tools/remap_roboflow_labels.py` | --scheme {three_class, four_class} | modified |
+| `tools/filter_pool_by_clip_margin.py` | R1 mitigation 풀 필터 | NEW |
+| `tools/run_yolo_matrix.sh` | 실험 행렬 드라이버 | NEW |
+| `xpaste/aug/__init__.py` | aug 패키지 (CLASSES) | NEW |
+| `xpaste/aug/distribution.py` | joint hist + inverse-freq sampler | NEW |
+| `xpaste/aug/host_scene.py` | host SegFormer + accept/reject | NEW |
+| `xpaste/aug/scale_heuristic.py` | depth-free scale fallback | NEW |
+| `xpaste/aug/style_match.py` | Lab hist + selection + post-match | NEW |
+| `xpaste/aug/build_augmented.py` | top-level offline driver | NEW |
+| `xpaste/aug/visualize.py` | bbox sanity 시각화 | NEW |
 
-## Commands
+## Experiment matrix
+
+5 exps × YOLO11 (n/s/m) × 3 seeds = **45 runs**.
+
+| Exp | Train data | Ablate |
+|-----|-----------|--------|
+| A | Real only | baseline |
+| B | Real + GT crop random paste (paste_mode=real_random) | SD 풀 자체 가치 |
+| C | Real + SD pool + random (paste_mode=pool_random) | naive X-Paste |
+| D | Real + SD pool + scene-aware uniform (paste_mode=scene_uniform) | scene-awareness |
+| **E** | **Real + SD pool + scene-aware + inverse-freq + style-match + post Lab match (paste_mode=style_full, full)** | **proposal** |
+| F (sweep) | E with `--temperature {0.5, 2.0}` | inverse-freq 효과 검증 |
+
+Eval: per-class AP50 on real test (197 imgs), 3 seeds mean ± std, paired bootstrap test for D vs E.
+
+## Commands (server)
 
 ```bash
-# Generate scenario backgrounds + instance pool + composed dataset (Stages 2-7)
-python generation/gen_scenario_prompts.py    --scenarios configs/scenarios.yaml
-python generation/gen_singleshot_scenes.py   --scenarios configs/scenarios.yaml --out output/bg
-python generation/filter_backgrounds.py      --in output/bg --out output/bg_clean
-python generation/gen_pose_instances.py      --out output/instances
-python generation/segment_pose_hf.py         --in output/instances --out output/instances_rgba
-python generation/compose_scene.py           --bg output/bg_clean --inst output/instances_rgba \
-                                             --out output/composed_train_v2
+cd /workspace/XPaste
+DATA_RAW=/workspace/datasets/Custom_Object_Detection_Military_v1
+DATA=/workspace/XPaste/data/military_v1
+POOL=/workspace/XPaste/output/pool_v1
+CACHE=/workspace/XPaste/cache
+mkdir -p "$DATA" "$POOL" "$CACHE"
 
-# Convert composed COCO JSON → YOLO format for training
-python tools/coco_to_yolo.py --coco output/composed_train_v2/annotations.json \
-                              --images output/composed_train_v2/images \
-                              --out data/military_yolo/synth
+# 1. 4-class 데이터 정리
+python tools/remap_roboflow_labels.py --scheme four_class \
+  --input_root "$DATA_RAW" --output_root "$DATA/real"
 
-# Remap Roboflow real test set to our 3 classes
-python tools/remap_roboflow_labels.py \
-  --input_root data/roboflow_soldier_raw/soldier.v1i.yolov11 \
-  --output_root data/military_yolo/real
+# 2. SD 풀 → CLIPSeg → margin 필터
+python generation/gen_pose_instances.py \
+  --poses_yaml configs/instance_poses_4cls.yaml --out "$POOL/raw" \
+  --n_per_pose 30 --image_size 512 --steps 30 --guidance 7.5
+python generation/segment_pose_hf.py --in "$POOL/raw" --out "$POOL/rgba"
+python tools/filter_pool_by_clip_margin.py --in "$POOL/rgba" --out "$POOL/rgba_filtered" \
+  --margin 0.10 --pairs "Soldier:civilian persons:soldier_uniform"
 
-# Train YOLO11 (n / s / m) — needs ultralytics installed
-pip install ultralytics
-yolo detect train data=configs/military.yaml model=yolo11n.pt epochs=100 imgsz=640 project=runs/military name=yolo11n
-yolo detect train data=configs/military.yaml model=yolo11s.pt epochs=100 imgsz=640 project=runs/military name=yolo11s
-yolo detect train data=configs/military.yaml model=yolo11m.pt epochs=100 imgsz=640 project=runs/military name=yolo11m
+# 3. 분포 / 풀 캐시
+python -m xpaste.aug.distribution --labels_dir "$DATA/real/train/labels" --out "$CACHE/dist_v1.json"
+python -m xpaste.aug.style_match --pool_dir "$POOL/rgba_filtered" --out "$CACHE/pool_index_v1.npz"
+
+# 4. 실험별 augmented set 생성 (B/C/D/E)
+for MODE in real_random pool_random scene_uniform style_full; do
+  case $MODE in real_random) E=B ;; pool_random) E=C ;; scene_uniform) E=D ;; style_full) E=E ;; esac
+  python -m xpaste.aug.build_augmented \
+    --host_root "$DATA/real/train" \
+    --pool_dir "$POOL/rgba_filtered" --pool_index "$CACHE/pool_index_v1.npz" \
+    --hist "$CACHE/dist_v1.json" \
+    --paste_mode $MODE --pastes_per_image 3 --temperature 1.0 \
+    --out_root "$DATA/aug_${E}/train" --seed 0
+done
+
+# 5. 시각화 sanity check
+python -m xpaste.aug.visualize \
+  --img "$DATA/aug_E/train/images/$(ls $DATA/aug_E/train/images | head -1)" \
+  --label "$DATA/aug_E/train/labels/$(ls $DATA/aug_E/train/labels | head -1)" \
+  --out viz/aug_E_check.png
+
+# 6. 학습 행렬 (5 exp x 3 model x 3 seed = 45 runs)
+bash tools/run_yolo_matrix.sh
 ```
 
 ## Reused from Original X-Paste
 
-- `generation/text2im.py` — SD 1.5 text-to-image base (자세별 인스턴스 생성에서 `--prompt_template` 활용)
-- `segment_methods/reseg.py` + `clean_pool.py` — 인스턴스 마스크 생성 / 필터링
-- `xpaste/data/transforms/custom_cp_method.py` — alpha / poisson blending (compose_scene에서 호출)
+- `generation/text2im.py` — SD 1.5 wrapper
+- `xpaste/data/transforms/custom_cp_method.py` — alpha/poisson blending
+- `xpaste/data/transforms/possion_blending.py` — Poisson editing
+- `segment_methods/{reseg,clean_pool,segment_pose_hf}.py` — instance seg/filter
+
+## Deprecated (kept for reference, not in active path)
+
+- `generation/gen_scenario_prompts.py` — LLM scenario prompt expansion
+- `generation/gen_singleshot_scenes.py` — SDXL background generation
+- `generation/filter_backgrounds.py` — DETR leak filter
+- `generation/compose_scene.py` — replaced by `xpaste/aug/build_augmented.py`
+- `configs/scenarios.yaml` — 10 scenario specs (no longer used)
+- `configs/military.yaml` — 3-class config (replaced by `military_4cls.yaml`)
 
 ## Plan File
 
-세부 단계 및 알고리즘은 `/Users/kyu216/.claude/plans/rosy-splashing-whistle.md` 참조.
+Full design + experiment matrix: `/Users/kyu216/.claude/plans/pure-stargazing-octopus.md`
