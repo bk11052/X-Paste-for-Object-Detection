@@ -186,8 +186,13 @@ def sample_anchor_pixels(mask: np.ndarray, n: int, rng: random.Random) -> list[t
 
 
 def select_valid_mask(scene: SceneAnalysis, category: str, distance_bias: str) -> tuple[np.ndarray, str]:
-    """OR all category-compatible region masks, then restrict by depth band.
-    Returns (mask, primary_region_name)."""
+    """OR all category-compatible region masks, then restrict by depth band (if available).
+    Returns (mask, primary_region_name).
+
+    When `scene.depth_norm` is None (use_depth=False), the depth-band restriction is
+    skipped; callers using the augmentation pipeline pick scale via scale_heuristic
+    instead of depth.
+    """
     regions = CATEGORY_TO_REGIONS.get(category, ["ground"])
     primary = None
     mask = np.zeros((scene.H, scene.W), dtype=bool)
@@ -204,9 +209,10 @@ def select_valid_mask(scene: SceneAnalysis, category: str, distance_bias: str) -
         mask[scene.H // 2:, :] = True
         primary = "fallback_lower"
 
-    d_lo, d_hi = DISTANCE_BANDS.get(distance_bias, DISTANCE_BANDS["mid"])
-    band = (scene.depth_norm >= d_lo) & (scene.depth_norm <= d_hi)
-    mask = mask & band
+    if scene.depth_norm is not None:
+        d_lo, d_hi = DISTANCE_BANDS.get(distance_bias, DISTANCE_BANDS["mid"])
+        band = (scene.depth_norm >= d_lo) & (scene.depth_norm <= d_hi)
+        mask = mask & band
     return mask, primary
 
 
@@ -235,8 +241,14 @@ def plan_paste(
             if attempts > cfg.max_attempts_per_count * spec.count:
                 break
 
-            d = float(scene.depth_norm[y, x])
-            h_px = scale_from_depth(d, spec.category)
+            if scene.depth_norm is not None:
+                d = float(scene.depth_norm[y, x])
+                h_px = scale_from_depth(d, spec.category)
+            else:
+                # depth-free fallback: use the "near" end of the curve as a default,
+                # since the augmentation pipeline overrides scale via scale_heuristic.
+                d = 0.0
+                h_px = scale_from_depth(0.5, spec.category)
             asp = aspect_for_spec(spec.category, spec.pose)
             # prone/lying poses occupy more area; reduce "height" so bbox isn't oversized
             if asp > 1.5:
