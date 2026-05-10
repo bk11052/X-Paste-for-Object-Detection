@@ -34,6 +34,11 @@ poses:
   - {category: military_vehicle, pose: "modern military armored personnel carrier, three-quarter view"}
   - {category: military_vehicle, pose: "modern military armored personnel carrier, rear view"}
   - {category: military_vehicle, pose: "modern military truck, side view"}
+  - {category: military_vehicle, pose: "modern main battle tank, side view"}
+  - {category: military_vehicle, pose: "modern main battle tank, front view"}
+  - {category: military_vehicle, pose: "modern main battle tank, three-quarter view"}
+  - {category: military_vehicle, pose: "modern main battle tank, rear view"}
+  - {category: military_vehicle, pose: "modern main battle tank in combat, side view"}
 
   - {category: civilian_vehicle, pose: "modern civilian sedan car, side view"}
   - {category: civilian_vehicle, pose: "modern civilian sedan car, front view"}
