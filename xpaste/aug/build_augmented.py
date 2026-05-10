@@ -543,7 +543,7 @@ def main() -> int:
                     "host_accept": bool(host.accept),
                     "reject_reason": host.reject_reason,
                     "gt_count": len(host.gt_boxes_xyxy),
-                    "gt_classes": [int(c) for c in host.gt_classes],
+                    "gt_classes": [str(c) for c in host.gt_classes],
                     "paste_mode": args.paste_mode,
                     "pastes": [
                         {
