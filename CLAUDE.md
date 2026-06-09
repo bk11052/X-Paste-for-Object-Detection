@@ -99,7 +99,7 @@ names: { 0: Soldier, 1: civilian_vehicle, 2: military_vehicle, 3: persons }
 
 ## Experiment matrix
 
-5 exps × YOLO11 (n/s/m) × 3 seeds = **45 runs**.
+5 exps × YOLO11 (n/s/m) × 3 seeds = **45 runs** (full). v2 round 는 B/C/D/E × n/s/m × seed 0 만 = **12 runs** (빠른 검증).
 
 | Exp | Train data | Ablate |
 |-----|-----------|--------|
@@ -107,8 +107,13 @@ names: { 0: Soldier, 1: civilian_vehicle, 2: military_vehicle, 3: persons }
 | B | Real + GT crop random paste (paste_mode=real_random) | SD 풀 자체 가치 |
 | C | Real + SD pool + random (paste_mode=pool_random) | naive X-Paste |
 | D | Real + SD pool + scene-aware uniform (paste_mode=scene_uniform) | scene-awareness |
-| **E** | **Real + SD pool + scene-aware + inverse-freq + style-match + post Lab match (paste_mode=style_full, full)** | **proposal** |
-| F (sweep) | E with `--temperature {0.5, 2.0}` | inverse-freq 효과 검증 |
+| **E** | **Real + SD pool + scene-aware + inverse-freq (`T=2.0`) + style-match + post Lab match (paste_mode=style_full)** | **proposal** |
+| F (sweep) | E with `--temperature {0.5, 1.0, 1.5}` | inverse-freq 강도 검증 |
+
+**v2 round 변경 (2026-05-10):**
+1. `configs/instance_poses_4cls.yaml` 의 `military_vehicle` 에 tank prompt 5개 추가 → SD pool `military_vehicle__main_battle_tank_*` slug 5개 생성. `category` 가 그대로 `military_vehicle` 이라 코드 변경 없이 클래스 매핑됨 (`xpaste/aug/style_match.py:_class_from_path` 가 `__` 앞 prefix 만 봄).
+2. E 의 `--temperature` 1.0 → **2.0** (1차 round 에서 T=1.0 이 tail 너무 강조해서 in-dist 회복 곁도). post Lab L-match 는 유지.
+3. 1차 결과: E 가 OOD-B 1위 (0.365~0.377) 지만 in-dist 약함 (0.903~0.913 vs D 0.916~0.927). v2 의 hypothesis: tank pool + T=2.0 으로 in-dist 회복 + OOD-A tank 인식 개선.
 
 Eval: per-class AP50 on real test (197 imgs), 3 seeds mean ± std, paired bootstrap test for D vs E.
 
@@ -231,19 +236,20 @@ for x in B C D E; do
 done
 
 build_aug() {
-  local MODE=$1 EXP=$2 GPU=$3
+  local MODE=$1 EXP=$2 GPU=$3 TEMP=$4
   CUDA_VISIBLE_DEVICES=$GPU nohup python -m xpaste.aug.build_augmented \
     --host_root "$DATA/real/train" \
     --pool_dir "$POOL/rgba_filtered" --pool_index "$CACHE/pool_index_v1.npz" \
     --hist "$CACHE/dist_v1.json" \
-    --paste_mode "$MODE" --pastes_per_image 3 --temperature 1.0 \
+    --paste_mode "$MODE" --pastes_per_image 3 --temperature "$TEMP" \
     --out_root "$DATA/aug_${EXP}/train" --save_meta --seed 0 \
     > "logs/aug_${EXP}.log" 2>&1 &
 }
-build_aug real_random   B 0
-build_aug pool_random   C 1
-build_aug scene_uniform D 2
-build_aug style_full    E 3
+# B/C/D 는 sampler 안 써서 T 무관, E 만 T=2.0 (v2 round)
+build_aug real_random   B 0 1.0
+build_aug pool_random   C 1 1.0
+build_aug scene_uniform D 2 1.0
+build_aug style_full    E 3 2.0
 wait
 
 # 검증: meta.jsonl 라인 수 == 이미지 수

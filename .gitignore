@@ -5,4 +5,4 @@
 *.gif
 *.pyc
 datasets/lvis/lvis_v1_train_norare.json
-.vscode/
+.vscode/.DS_Store
