@@ -8,11 +8,9 @@ Built upon [X-Paste (ICML 2023)](https://arxiv.org/abs/2212.03863): instead of g
 
 ## Pipeline Tour
 
-<video src="https://github.com/bk11052/X-Paste-for-Object-Detection/raw/feat/dist-aware-paste-4cls/assets/pipeline_tour.mp4" controls width="100%"></video>
+<video src="https://github.com/bk11052/X-Paste-for-Object-Detection/raw/main/assets/pipeline_tour.mp4" controls width="100%"></video>
 
 ▶ If the video does not play inline, open it directly: [assets/pipeline_tour.mp4](assets/pipeline_tour.mp4)
-
-<!-- NOTE: after merging to main, replace `feat/dist-aware-paste-4cls` in the video URL above with `main`. -->
 
 ## Key Contribution
 
