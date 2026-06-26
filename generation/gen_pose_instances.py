@@ -1,17 +1,16 @@
 """
 Generate pose-specific instance images with SD 1.5.
 
-Reads:    configs/scenarios.yaml  (extracts unique (category, pose) pairs from instances spec)
+Reads:    configs/instance_poses_4cls.yaml  (unique (category, pose) pairs from the instances spec)
 Writes:   <output_dir>/<pose_slug>/{0000.png, 0001.png, ...}
           <output_dir>/poses.json  (registry of pose slug -> {category, pose_prompt, clip_scores})
 
-The output directory structure matches what segment_methods/reseg.py expects, so the
-existing segmentation + clean_pool pipeline can be run on this directory unchanged
-to produce the scenario-aware instance pool.
+Feed the output directory to segment_methods/segment_pose_hf.py to produce the RGBA
+instance pool used by the distribution-aware paste pipeline.
 
 Usage:
     python generation/gen_pose_instances.py \
-        --scenarios configs/scenarios.yaml \
+        --scenarios configs/instance_poses_4cls.yaml \
         --output_dir output/pose_instances \
         --samples 100 \
         --batchsize 4 \
@@ -201,12 +200,10 @@ def main() -> int:
 
     write_results_json()  # ensure final state, even if all skipped via --resume
     print(f"\nDone. Registry: {registry_path}")
-    print(f"      reseg.py-compatible: {results_path}")
+    print(f"      results manifest: {results_path}")
     print(
-        "\nNext: run segmentation on the output directory:\n"
-        f"  python segment_methods/reseg.py --input_dir {out_root} --output_dir <seg_out> --seg_method U2Net\n"
-        "  python segment_methods/clean_pool.py --input_dir <seg_out> --image_dir "
-        f"{out_root} --output_file <pool.json> --min_clip 21 --min_area 0.05 --max_area 0.95"
+        "\nNext: segment the generated crops into RGBA cut-outs:\n"
+        f"  python segment_methods/segment_pose_hf.py --input_dir {out_root} --output_dir <rgba_out>"
     )
     return 0
 

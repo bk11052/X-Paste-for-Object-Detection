@@ -1,7 +1,7 @@
 """
 Scene analysis: per-image depth (DepthAnything-V2) + semantic segmentation (SegFormer ADE20K).
 
-Used by adaptive_paste_planner.py to decide:
+Wrapped by xpaste.aug.host_scene.HostSceneAnalyzer (use_depth=False) to decide:
   - WHERE objects can plausibly be pasted (segmentation: ground/road/sky regions)
   - HOW BIG each pasted object should be (depth: farther pixel -> smaller scale)
 

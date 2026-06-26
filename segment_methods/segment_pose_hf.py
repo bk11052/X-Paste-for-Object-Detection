@@ -1,10 +1,9 @@
 """
 Segment pose instances with HuggingFace CLIPSeg (no third_party setup needed).
 
-This is a simpler alternative to the multi-method pipeline:
-   reseg.py + clean_pool.py + pose_pool_reorganize.py
-which requires downloading clipseg/, U-2-Net/, etc. The single-method HF CLIPSeg
-output is good enough for paper figures and a first round of training.
+Single-method HF CLIPSeg segmentation: turns the generated SD 1.5 instance
+crops into RGBA cut-outs for the paste pool. No local segmentation models
+(clipseg/, U-2-Net/, etc.) required.
 
 Inputs:
   --input_dir   output of generation/gen_pose_instances.py
@@ -197,10 +196,9 @@ def main() -> int:
     print(f"\nDone. kept={kept_total} dropped={dropped_total}")
     print(f"  -> {out_root}")
     print(
-        f"\nNext: python generation/compose_scene.py "
-        f"--pose_pool_dir {out_root} "
-        f"--backgrounds_dir output/scenario_backgrounds "
-        f"--scenarios configs/scenarios.yaml --output_dir output/composed_train --save_viz"
+        f"\nNext: python tools/filter_pool_by_clip_margin.py "
+        f"--in {out_root} --out {out_root}_filtered "
+        f"--margin 0.10 --pairs \"Soldier:civilian persons:soldier_uniform\""
     )
     return 0
 
